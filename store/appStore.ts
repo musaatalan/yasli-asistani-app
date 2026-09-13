@@ -23,9 +23,11 @@ type AppStore = {
   waterLogs: WaterLog[];
   appointments: Appointment[];
   settingsUnlocked: boolean;
+  onboardingCompleted: boolean;
 
   updateSettings: (partial: Partial<AppSettings>) => void;
   setSettingsUnlocked: (value: boolean) => void;
+  completeOnboarding: () => void;
   verifyPin: (pin: string) => boolean;
 
   setEmergencyContacts: (contacts: EmergencyContact[]) => void;
@@ -93,6 +95,7 @@ export const useAppStore = create<AppStore>()(
       waterLogs: [],
       appointments: [],
       settingsUnlocked: false,
+      onboardingCompleted: false,
 
       updateSettings: (partial) =>
         set((state) => ({
@@ -106,6 +109,8 @@ export const useAppStore = create<AppStore>()(
         })),
 
       setSettingsUnlocked: (value) => set({ settingsUnlocked: value }),
+
+      completeOnboarding: () => set({ onboardingCompleted: true }),
 
       verifyPin: (pin) => {
         const ok = pin === get().settings.settingsPin;
@@ -214,12 +219,23 @@ export const useAppStore = create<AppStore>()(
         bloodSugar: state.bloodSugar,
         waterLogs: state.waterLogs,
         appointments: state.appointments,
+        onboardingCompleted: state.onboardingCompleted,
       }),
       merge: (persisted, current) => {
         const p = (persisted ?? {}) as Partial<AppStore>;
+        const contacts = p.emergencyContacts ?? current.emergencyContacts;
+        const hasPhone = contacts.some(
+          (c) => (c.phone ?? '').replace(/\D/g, '').length >= 7
+        );
+        // Eski kurulumda numara varsa kurulum ekranını atla
+        const onboardingCompleted =
+          p.onboardingCompleted === true ||
+          (p.onboardingCompleted !== false && hasPhone);
+
         return {
           ...current,
           ...p,
+          onboardingCompleted,
           settings: {
             ...current.settings,
             ...(p.settings ?? {}),

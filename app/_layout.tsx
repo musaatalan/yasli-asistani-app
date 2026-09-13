@@ -18,14 +18,16 @@ import { useFallAlertStore } from '@/store/fallAlertStore';
 export default function RootLayout() {
   const medicines = useAppStore((s) => s.medicines);
   const sensors = useAppStore((s) => s.settings.sensors);
+  const onboardingCompleted = useAppStore((s) => s.onboardingCompleted);
 
   useEffect(() => {
+    if (!onboardingCompleted) return;
     void NotificationService.scheduleMedicineReminders(medicines);
-  }, [medicines]);
+  }, [medicines, onboardingCompleted]);
 
   // Düşme algılama — Android foreground service + stillness filtreli sensör
   useEffect(() => {
-    if (!sensors.fallDetectionEnabled) {
+    if (!onboardingCompleted || !sensors.fallDetectionEnabled) {
       void BackgroundFallService.stop();
       return;
     }
@@ -39,6 +41,7 @@ export default function RootLayout() {
       void BackgroundFallService.stop();
     };
   }, [
+    onboardingCompleted,
     sensors.fallDetectionEnabled,
     sensors.fallSensitivity,
     sensors.fallCountdownSeconds,
@@ -46,6 +49,11 @@ export default function RootLayout() {
 
   // Normal mod: sesli İMDAT / YARDIM / SOS dinleme
   useEffect(() => {
+    if (!onboardingCompleted) {
+      void VoiceTriggerService.stop();
+      return;
+    }
+
     let disposed = false;
 
     const startEmergency = () => {
@@ -83,7 +91,7 @@ export default function RootLayout() {
       sub.remove();
       void VoiceTriggerService.stop();
     };
-  }, []);
+  }, [onboardingCompleted]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.bg }}>

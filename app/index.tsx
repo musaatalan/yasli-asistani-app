@@ -1,6 +1,6 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Alert,
   Pressable,
@@ -19,7 +19,26 @@ import { useAppStore } from '@/store/appStore';
 export default function HomeScreen() {
   const userName = useAppStore((s) => s.settings.userName);
   const fallEnabled = useAppStore((s) => s.settings.sensors.fallDetectionEnabled);
+  const onboardingCompleted = useAppStore((s) => s.onboardingCompleted);
+  const emergencyContacts = useAppStore((s) => s.emergencyContacts);
   const [sosLoading, setSosLoading] = useState(false);
+  const [hydrated, setHydrated] = useState(useAppStore.persist.hasHydrated());
+
+  useEffect(() => {
+    const unsub = useAppStore.persist.onFinishHydration(() => setHydrated(true));
+    setHydrated(useAppStore.persist.hasHydrated());
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (hydrated && !onboardingCompleted) {
+      router.replace('/onboarding');
+    }
+  }, [hydrated, onboardingCompleted]);
+
+  const hasEmergencyPhone = emergencyContacts.some(
+    (c) => (c.phone ?? '').replace(/\D/g, '').length >= 7
+  );
 
   const handleSos = async () => {
     setSosLoading(true);
@@ -52,6 +71,10 @@ export default function HomeScreen() {
     }
   };
 
+  if (!hydrated || !onboardingCompleted) {
+    return <SafeAreaView style={styles.safe} edges={['top', 'bottom']} />;
+  }
+
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>
       <View style={styles.topBar}>
@@ -73,6 +96,18 @@ export default function HomeScreen() {
           <Ionicons name="settings-sharp" size={28} color={Colors.text} />
         </Pressable>
       </View>
+
+      {!hasEmergencyPhone ? (
+        <Pressable
+          style={styles.warnBanner}
+          onPress={() => router.push('/onboarding')}
+        >
+          <Ionicons name="warning" size={22} color={Colors.text} />
+          <Text style={styles.warnBannerText}>
+            Acil telefon yok — dokunup kurulumdan numara girin
+          </Text>
+        </Pressable>
+      ) : null}
 
       <View style={styles.grid}>
         <View style={styles.row}>
@@ -174,6 +209,22 @@ const styles = StyleSheet.create({
     color: Colors.success,
     fontSize: Typography.caption,
     fontWeight: '700',
+  },
+  warnBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: Colors.sosDark,
+    borderRadius: 14,
+    padding: Spacing.md,
+    marginBottom: Spacing.sm,
+  },
+  warnBannerText: {
+    flex: 1,
+    color: Colors.text,
+    fontSize: Typography.caption,
+    fontWeight: '700',
+    lineHeight: 22,
   },
   settingsBtn: {
     width: 56,

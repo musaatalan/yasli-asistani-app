@@ -16,6 +16,7 @@ import { EmergencyCard } from '@/components/EmergencyCard';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { Colors, Spacing, Typography } from '@/constants/theme';
 import { pickAndPersistContactPhoto } from '@/services/PhotoService';
+import { PermissionService } from '@/services/PermissionService';
 import { SosService } from '@/services/SosService';
 import { FallDetectionService } from '@/services/FallDetectionService';
 import { useAppStore } from '@/store/appStore';
@@ -204,6 +205,20 @@ export default function SettingsScreen() {
           <Text style={styles.testFallText}>Düşme geri sayımını test et</Text>
         </Pressable>
 
+        <Pressable
+          style={styles.permBtn}
+          onPress={() => router.push('/onboarding')}
+        >
+          <Text style={styles.permBtnText}>Kurulum / izinleri yeniden aç</Text>
+        </Pressable>
+
+        <Pressable
+          style={styles.permBtnSecondary}
+          onPress={() => void PermissionService.openAppPermissionSettings()}
+        >
+          <Text style={styles.permBtnSecondaryText}>Telefon izin ayarları</Text>
+        </Pressable>
+
         <Pressable style={styles.primaryBtn} onPress={save}>
           <Text style={styles.primaryBtnText}>Kaydet</Text>
         </Pressable>
@@ -298,6 +313,31 @@ const styles = StyleSheet.create({
     color: Colors.text,
     fontSize: Typography.body,
     fontWeight: '800',
+  },
+  permBtn: {
+    minHeight: 56,
+    borderRadius: 14,
+    backgroundColor: Colors.medicine,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  permBtnText: {
+    color: Colors.text,
+    fontSize: Typography.body,
+    fontWeight: '800',
+  },
+  permBtnSecondary: {
+    minHeight: 52,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: Colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  permBtnSecondaryText: {
+    color: Colors.text,
+    fontSize: Typography.body,
+    fontWeight: '700',
   },
   primaryBtn: {
     minHeight: 68,
