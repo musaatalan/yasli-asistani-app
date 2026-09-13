@@ -44,7 +44,7 @@ function describeSosResult(result: {
   return [
     result.locationAttached ? 'Konum mesaja eklendi.' : 'Konum alınamadı.',
     result.smsOpened
-      ? "SMS ekranı açıldı — Gönder'e basın."
+      ? "SMS ekranı açıldı — 'Gönder'e basın (Android otomatik SMS atmaz)."
       : 'SMS açılamadı.',
     result.calledPhone
       ? `Arama başlatıldı: ${result.calledPhone}`
@@ -141,14 +141,14 @@ export function FallCountdownOverlay() {
           );
           Alert.alert(
             'Acil numara yok',
-            "SMS/arama yapılamadı.\n\nAyarlar (kilit) → Acil Kişi telefonunu girip Kaydet'e basın."
+            "SMS/arama yapılamadı.\n\nAyarlar (üstteki ⚙️) → şifre 1234 → Acil Kişi telefonunu gir → Kaydet."
           );
           return;
         }
 
         await NotificationService.sendImmediateAlert(
           'Düşme — SOS',
-          'SMS ve arama başlatılıyor…'
+          'Arama başlatılıyor, ardından SMS…'
         );
 
         const result = await SosService.triggerSos(

@@ -32,32 +32,34 @@ function sleep(ms: number) {
   return new Promise<void>((resolve) => setTimeout(resolve, ms));
 }
 
-/** Uygulama ön plana gelene kadar bekle (arka plan Intent engelini aşmak için). */
-async function waitUntilActive(timeoutMs = 8000): Promise<boolean> {
-  if (AppState.currentState === 'active') return true;
+function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return Promise.race([
+    promise,
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms)),
+  ]);
+}
 
+/** Uygulamayı öne getir — arka plandan Intent engelini aşmak için. */
+async function bringAppToForeground(): Promise<void> {
   try {
     await Linking.openURL('yasliasistani://');
   } catch {
     // ignore
   }
 
-  return new Promise((resolve) => {
-    if (AppState.currentState === 'active') {
-      resolve(true);
-      return;
-    }
+  if (AppState.currentState === 'active') return;
 
+  await new Promise<void>((resolve) => {
     const timer = setTimeout(() => {
       sub.remove();
-      resolve(AppState.currentState === 'active');
-    }, timeoutMs);
+      resolve();
+    }, 2500);
 
     const sub = AppState.addEventListener('change', (state) => {
       if (state === 'active') {
         clearTimeout(timer);
         sub.remove();
-        resolve(true);
+        resolve();
       }
     });
   });
@@ -89,24 +91,22 @@ export async function dialNumber(phone: string): Promise<boolean> {
     const canCall = await requestCallPermission();
     try {
       if (canCall) {
-        // Doğrudan ara (kullanıcı Onay vermeden hat açılır — izin varsa)
         await IntentLauncher.startActivityAsync('android.intent.action.CALL', {
           data: `tel:${cleaned}`,
         });
         return true;
       }
-      // İzin yoksa numaralı arama ekranı
       await IntentLauncher.startActivityAsync('android.intent.action.DIAL', {
         data: `tel:${cleaned}`,
       });
       return true;
     } catch (error) {
-      console.warn('[SosService] Intent dial failed, fallback Linking', error);
+      console.warn('[SosService] Intent dial failed', error);
     }
   }
 
-  const url = Platform.OS === 'ios' ? `telprompt:${cleaned}` : `tel:${cleaned}`;
   try {
+    const url = Platform.OS === 'ios' ? `telprompt:${cleaned}` : `tel:${cleaned}`;
     await Linking.openURL(url);
     return true;
   } catch {
@@ -117,28 +117,13 @@ export async function dialNumber(phone: string): Promise<boolean> {
 async function openSmsComposer(phones: string[], message: string): Promise<boolean> {
   if (phones.length === 0) return false;
 
-  // 1) expo-sms (mümkünse)
-  try {
-    if (await SMS.isAvailableAsync()) {
-      const result = await SMS.sendSMSAsync(phones, message);
-      // cancelled değilse ekran açılmış demektir
-      if (result.result !== 'cancelled') {
-        return true;
-      }
-      // Kullanıcı iptal ettiyse yine de true saymayalım — fallback dene
-    }
-  } catch (error) {
-    console.warn('[SosService] expo-sms failed', error);
-  }
-
-  // 2) Android Intent
   if (Platform.OS === 'android') {
     try {
+      // Tek alıcı + body — en güvenilir Intent
       await IntentLauncher.startActivityAsync('android.intent.action.SENDTO', {
-        data: `smsto:${phones.join(';')}`,
+        data: `smsto:${phones[0]}`,
         extra: {
           sms_body: message,
-          'android.intent.extra.TEXT': message,
         },
       });
       return true;
@@ -147,11 +132,19 @@ async function openSmsComposer(phones: string[], message: string): Promise<boole
     }
   }
 
-  // 3) Deep link fallback
+  try {
+    if (await SMS.isAvailableAsync()) {
+      const result = await SMS.sendSMSAsync(phones, message);
+      return result.result !== 'cancelled';
+    }
+  } catch (error) {
+    console.warn('[SosService] expo-sms failed', error);
+  }
+
   try {
     const body = encodeURIComponent(message);
-    const separator = Platform.OS === 'ios' ? '&' : '?';
-    await Linking.openURL(`sms:${phones[0]}${separator}body=${body}`);
+    const sep = Platform.OS === 'ios' ? '&' : '?';
+    await Linking.openURL(`sms:${phones[0]}${sep}body=${body}`);
     return true;
   } catch {
     return false;
@@ -159,76 +152,92 @@ async function openSmsComposer(phones: string[], message: string): Promise<boole
 }
 
 /**
- * SOS: Önce uygulama ön planda olsun → SMS şablonu açılsın → kısa bekleme → arama.
- * Not: iOS/Android güvenlik kuralları nedeniyle SMS çoğu cihazda kullanıcı onayı ister;
- * arama CALL_PHONE izniyle doğrudan başlatılabilir.
+ * SOS akışı (hızlı ve güvenilir):
+ * 1) Uygulamayı öne getir
+ * 2) HEMEN ara (konum bekleme)
+ * 3) Konumu kısa timeout ile al
+ * 4) SMS şablonunu aç
  */
 export async function triggerSos(
   contacts: EmergencyContact[],
   baseMessage: string,
   reasonPrefix = 'ACİL DURUM'
 ): Promise<SosResult> {
-  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+  await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error).catch(
+    () => undefined
+  );
 
   const phones = collectPhones(contacts);
   const primary = pickPrimaryPhone(contacts);
-
-  const { text: locationText, attached } = await getEmergencyLocationText();
-  const message = [
-    `${reasonPrefix} — Güvenli Yaşlı Asistanı`,
-    baseMessage,
-    '',
-    locationText,
-    '',
-    `Zaman: ${new Date().toLocaleString('tr-TR')}`,
-  ].join('\n');
 
   if (phones.length === 0 && !primary) {
     return {
       smsOpened: false,
       calledPhone: null,
-      locationAttached: attached,
-      message,
-      error: 'Acil kişi telefon numarası yok. Ayarlar → Acil Kişi alanına numara girin.',
+      locationAttached: false,
+      message: '',
+      error:
+        'Acil kişi telefon numarası yok. Ayarlar → Acil Kişi alanına numara girip Kaydet.',
     };
   }
 
-  // Arka plandan Intent açmak Android'de engellenir — önce öne getir
-  await waitUntilActive();
-  await sleep(600);
+  await bringAppToForeground();
+  await sleep(400);
 
-  let smsOpened = false;
   let calledPhone: string | null = null;
+  let smsOpened = false;
   let error: string | undefined;
 
-  // Önce SMS ekranı (konum linkli), sonra arama — birbirini ezmesin diye aralıklı
-  try {
-    smsOpened = await openSmsComposer(phones.length ? phones : primary ? [primary] : [], message);
-  } catch (e) {
-    error = 'SMS ekranı açılamadı.';
-    console.warn(e);
-  }
-
-  // SMS uygulaması öne gelsin, sonra aramaya geç
-  await sleep(2500);
-
+  // 1) ÖNCE ARA — konum beklenmez
   if (primary) {
     try {
       const ok = await dialNumber(primary);
       calledPhone = ok ? primary : null;
-      if (!ok) {
-        error = [error, 'Arama başlatılamadı.'].filter(Boolean).join(' ');
-      }
-    } catch (e) {
-      error = [error, 'Arama başlatılamadı.'].filter(Boolean).join(' ');
-      console.warn(e);
+      if (!ok) error = 'Arama başlatılamadı.';
+    } catch {
+      error = 'Arama başlatılamadı.';
     }
+  }
+
+  // 2) Konum en fazla 3 sn — asla SOS'u kilitlemesin
+  const location = await withTimeout(
+    getEmergencyLocationText(),
+    3000,
+    {
+      text: 'Konum zaman aşımı. Lütfen hemen arayın.',
+      attached: false,
+    }
+  );
+
+  const message = [
+    `${reasonPrefix} — Güvenli Yaşlı Asistanı`,
+    baseMessage,
+    '',
+    location.text,
+    '',
+    `Zaman: ${new Date().toLocaleString('tr-TR')}`,
+  ].join('\n');
+
+  // 3) SMS (kullanıcı Gönder'e basmalı — Android sessiz SMS göndermez)
+  await sleep(1200);
+  try {
+    await bringAppToForeground();
+    await sleep(300);
+    smsOpened = await openSmsComposer(
+      phones.length ? phones : primary ? [primary] : [],
+      message
+    );
+    if (!smsOpened) {
+      error = [error, 'SMS ekranı açılamadı.'].filter(Boolean).join(' ');
+    }
+  } catch {
+    error = [error, 'SMS ekranı açılamadı.'].filter(Boolean).join(' ');
   }
 
   return {
     smsOpened,
     calledPhone,
-    locationAttached: attached,
+    locationAttached: location.attached,
     message,
     error,
   };
@@ -241,5 +250,5 @@ export const SosService = {
   dialNumber,
   collectPhones,
   pickPrimaryPhone,
-  waitUntilActive,
+  bringAppToForeground,
 };
