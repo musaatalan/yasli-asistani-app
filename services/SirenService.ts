@@ -14,12 +14,15 @@ function notify() {
   listeners.forEach((listener) => listener(isPlaying));
 }
 
-async function configureAudioMax(): Promise<void> {
+async function configureAudioMax(options?: {
+  allowRecording?: boolean;
+}): Promise<void> {
   await setAudioModeAsync({
     playsInSilentMode: true,
     shouldPlayInBackground: true,
-    interruptionMode: 'doNotMix',
-    allowsRecording: false,
+    // Sesli iptal için kayıt + çalma birlikte olmalı
+    interruptionMode: options?.allowRecording ? 'duckOthers' : 'doNotMix',
+    allowsRecording: options?.allowRecording ?? false,
   });
 }
 
@@ -40,10 +43,10 @@ export const SirenService = {
     return isPlaying;
   },
 
-  async start(): Promise<void> {
+  async start(options?: { allowRecording?: boolean }): Promise<void> {
     if (isPlaying) return;
 
-    await configureAudioMax();
+    await configureAudioMax(options);
     await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     Vibration.vibrate([0, 700, 300, 700], true);
 
@@ -55,7 +58,8 @@ export const SirenService = {
 
       const player = createAudioPlayer(require('../assets/sounds/siren.wav'));
       player.loop = true;
-      player.volume = 1.0;
+      // Sesli komut duyulsun diye düşme modunda biraz kısık
+      player.volume = options?.allowRecording ? 0.75 : 1.0;
       player.play();
 
       sirenPlayer = player;

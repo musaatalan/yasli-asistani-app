@@ -13,15 +13,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { BigButton } from '@/components/BigButton';
 import { Colors, Layout, Spacing, Typography } from '@/constants/theme';
 import { SosService } from '@/services/SosService';
+import { FallDetectionService } from '@/services/FallDetectionService';
 import { useAppStore } from '@/store/appStore';
-import { useFallAlertStore } from '@/store/fallAlertStore';
 
 export default function HomeScreen() {
   const userName = useAppStore((s) => s.settings.userName);
   const emergencyContacts = useAppStore((s) => s.emergencyContacts);
   const emergencyMessage = useAppStore((s) => s.settings.emergencyMessage);
   const fallEnabled = useAppStore((s) => s.settings.sensors.fallDetectionEnabled);
-  const startCountdown = useFallAlertStore((s) => s.startCountdown);
   const [sosLoading, setSosLoading] = useState(false);
 
   const handleSos = async () => {
@@ -133,7 +132,7 @@ export default function HomeScreen() {
         <Pressable
           style={styles.devFall}
           onPress={() =>
-            startCountdown(10, 'Test: düşme simülasyonu')
+            FallDetectionService.openFallCountdown(10, 'Test: düşme simülasyonu')
           }
         >
           <Text style={styles.devFallText}>[DEV] Düşme simüle et</Text>

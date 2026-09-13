@@ -17,8 +17,8 @@ import { ScreenHeader } from '@/components/ScreenHeader';
 import { Colors, Spacing, Typography } from '@/constants/theme';
 import { pickAndPersistContactPhoto } from '@/services/PhotoService';
 import { SosService } from '@/services/SosService';
+import { FallDetectionService } from '@/services/FallDetectionService';
 import { useAppStore } from '@/store/appStore';
-import { useFallAlertStore } from '@/store/fallAlertStore';
 
 export default function SettingsScreen() {
   const settings = useAppStore((s) => s.settings);
@@ -28,7 +28,6 @@ export default function SettingsScreen() {
   const updateSettings = useAppStore((s) => s.updateSettings);
   const emergencyContacts = useAppStore((s) => s.emergencyContacts);
   const upsertEmergencyContact = useAppStore((s) => s.upsertEmergencyContact);
-  const startCountdown = useFallAlertStore((s) => s.startCountdown);
 
   const [pin, setPin] = useState('');
   const [userName, setUserName] = useState(settings.userName);
@@ -196,7 +195,7 @@ export default function SettingsScreen() {
         <Pressable
           style={styles.testFall}
           onPress={() =>
-            startCountdown(
+            FallDetectionService.openFallCountdown(
               settings.sensors.fallCountdownSeconds ?? 10,
               'Ayarlardan test edildi'
             )

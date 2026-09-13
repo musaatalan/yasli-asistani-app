@@ -4,9 +4,12 @@ type FallAlertState = {
   active: boolean;
   secondsLeft: number;
   reason: string;
+  /** İptal sonrası kısa 'İptal Edildi' gösterimi */
+  cancelledBanner: boolean;
   startCountdown: (seconds: number, reason?: string) => void;
   tick: () => void;
   cancel: () => void;
+  clearCancelledBanner: () => void;
   consumeExpired: () => boolean;
 };
 
@@ -17,10 +20,16 @@ export const useFallAlertStore = create<FallAlertState>((set, get) => ({
   active: false,
   secondsLeft: 0,
   reason: 'Düşme algılandı',
+  cancelledBanner: false,
 
   startCountdown: (seconds, reason = 'Düşme algılandı') => {
     if (get().active) return;
-    set({ active: true, secondsLeft: seconds, reason });
+    set({
+      active: true,
+      secondsLeft: seconds,
+      reason,
+      cancelledBanner: false,
+    });
   },
 
   tick: () => {
@@ -33,12 +42,19 @@ export const useFallAlertStore = create<FallAlertState>((set, get) => ({
     set({ secondsLeft: secondsLeft - 1 });
   },
 
-  cancel: () => set({ active: false, secondsLeft: 0 }),
+  cancel: () =>
+    set({
+      active: false,
+      secondsLeft: 0,
+      cancelledBanner: true,
+    }),
+
+  clearCancelledBanner: () => set({ cancelledBanner: false }),
 
   consumeExpired: () => {
     const { active, secondsLeft } = get();
     if (active && secondsLeft <= 0) {
-      set({ active: false, secondsLeft: 0 });
+      set({ active: false, secondsLeft: 0, cancelledBanner: false });
       return true;
     }
     return false;

@@ -1,6 +1,6 @@
 {
   "name": "yasliasistaniapp",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -28,6 +28,7 @@
     "expo-sensors": "~57.0.3",
     "expo-sms": "~57.0.2",
     "expo-speech": "~57.0.3",
+    "expo-speech-recognition": "^57.0.0",
     "expo-splash-screen": "~57.0.9",
     "expo-status-bar": "~57.0.1",
     "react": "19.2.3",
