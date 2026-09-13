@@ -1,16 +1,20 @@
-import { Accelerometer } from 'expo-sensors';
-import { AppState, Linking, PermissionsAndroid, Platform } from 'react-native';
-import BackgroundService from 'react-native-background-actions';
+import { AppState, Linking, Platform } from 'react-native';
+import {
+  cancelGuardianAlert,
+  isGuardianRunning,
+  startGuardian,
+  stopGuardian,
+  syncGuardianConfig,
+} from 'guardian-native';
 
 import {
   FallDetectionService,
   type FallSensitivity,
 } from '@/services/FallDetectionService';
 import { VoiceTriggerService } from '@/services/VoiceTriggerService';
+import { SosService } from '@/services/SosService';
 import { useAppStore } from '@/store/appStore';
 import { useFallAlertStore } from '@/store/fallAlertStore';
-
-const TASK_NAME = 'YasliAsistaniGuardian';
 
 type MonitorOptions = {
   sensitivity?: FallSensitivity;
@@ -21,19 +25,13 @@ type MonitorOptions = {
 let foregroundUnsubscribe: (() => void) | null = null;
 let appStateSub: { remove: () => void } | null = null;
 
-function sleep(ms: number) {
-  return new Promise<void>((resolve) => setTimeout(resolve, ms));
-}
-
 function onFallDetected() {
   const seconds =
     useAppStore.getState().settings.sensors.fallCountdownSeconds ?? 10;
-
   FallDetectionService.openFallCountdown(
     seconds,
     'Düşme algılandı (serbest düşüş + darbe + hareketsizlik)'
   );
-
   void Linking.openURL('yasliasistani://');
 }
 
@@ -43,111 +41,39 @@ function onVoiceEmergency() {
     useAppStore.getState().settings.sensors.fallCountdownSeconds ?? 10;
   FallDetectionService.openFallCountdown(
     seconds,
-    'Sesli imdat komutu algılandı (arka plan)'
+    'Sesli imdat komutu algılandı'
   );
   void Linking.openURL('yasliasistani://');
 }
 
-async function ensureActivityRecognition(): Promise<boolean> {
-  if (Platform.OS !== 'android') return true;
-  try {
-    const granted = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION,
-      {
-        title: 'Hareket izni',
-        message: 'Düşme algılama için fiziksel aktivite izni gerekir.',
-        buttonPositive: 'İzin ver',
-        buttonNegative: 'Hayır',
-      }
-    );
-    return granted === PermissionsAndroid.RESULTS.GRANTED;
-  } catch {
-    return false;
-  }
+async function pushNativeConfig(options?: MonitorOptions): Promise<void> {
+  if (Platform.OS !== 'android') return;
+
+  const state = useAppStore.getState();
+  const phones = SosService.collectPhones(state.emergencyContacts);
+  const primary =
+    SosService.pickPrimaryPhone(state.emergencyContacts) ?? phones[0] ?? '';
+
+  await syncGuardianConfig({
+    enabled: true,
+    fallEnabled:
+      options?.fallDetectionEnabled ?? state.settings.sensors.fallDetectionEnabled,
+    voiceEnabled: true,
+    sensitivity:
+      options?.sensitivity ?? state.settings.sensors.fallSensitivity ?? 'medium',
+    countdownSeconds:
+      options?.countdownSeconds ??
+      state.settings.sensors.fallCountdownSeconds ??
+      10,
+    phones: phones.join(','),
+    primaryPhone: primary,
+    message: state.settings.emergencyMessage,
+  });
 }
 
 /**
- * Foreground service JS döngüsü — uygulama kapalıyken de:
- * - düşme sensörü (açıksa)
- * - İMDAT / YARDIM ses dinleme
- */
-async function guardianTask(taskData?: MonitorOptions) {
-  const sensitivity =
-    taskData?.sensitivity ??
-    useAppStore.getState().settings.sensors.fallSensitivity ??
-    'medium';
-
-  const fallEnabled =
-    taskData?.fallDetectionEnabled ??
-    useAppStore.getState().settings.sensors.fallDetectionEnabled;
-
-  let accelSub: { remove: () => void } | null = null;
-
-  if (fallEnabled) {
-    Accelerometer.setUpdateInterval(50);
-    accelSub = Accelerometer.addListener(({ x, y, z }) => {
-      FallDetectionService.processSample(x, y, z, onFallDetected, sensitivity);
-    });
-  }
-
-  // Arka planda İMDAT — FGS + microphone tipi ile canlı kalır
-  if (!useFallAlertStore.getState().active) {
-    await VoiceTriggerService.startEmergencyMode(onVoiceEmergency);
-  }
-
-  try {
-    while (BackgroundService.isRunning()) {
-      // Ses dinleme düştüyse ve overlay yoksa yeniden başlat
-      if (
-        !useFallAlertStore.getState().active &&
-        VoiceTriggerService.getMode() === 'off'
-      ) {
-        await VoiceTriggerService.startEmergencyMode(onVoiceEmergency);
-      }
-
-      // Düşme ayarı runtime'da açıldıysa sensörü bağla
-      const enabledNow =
-        useAppStore.getState().settings.sensors.fallDetectionEnabled;
-      if (enabledNow && !accelSub) {
-        const sens =
-          useAppStore.getState().settings.sensors.fallSensitivity ?? 'medium';
-        Accelerometer.setUpdateInterval(50);
-        accelSub = Accelerometer.addListener(({ x, y, z }) => {
-          FallDetectionService.processSample(x, y, z, onFallDetected, sens);
-        });
-      } else if (!enabledNow && accelSub) {
-        accelSub.remove();
-        accelSub = null;
-      }
-
-      await sleep(2000);
-    }
-  } finally {
-    accelSub?.remove();
-    // Servis dururken sesi de kes — yeniden start dışarıdan gelir
-  }
-}
-
-const notificationOptions = {
-  taskName: TASK_NAME,
-  taskTitle: 'Koruma aktif',
-  taskDesc: 'İmdat dinleniyor · düşme koruması açık',
-  taskIcon: {
-    name: 'ic_launcher',
-    type: 'mipmap',
-  },
-  color: '#E11D2E',
-  linkingURI: 'yasliasistani://',
-  // microphone: arka planda İMDAT; specialUse: düşme izleme
-  foregroundServiceType: ['microphone', 'specialUse'] as (
-    | 'microphone'
-    | 'specialUse'
-  )[],
-};
-
-/**
- * Uygulama kapalıyken koruma — Android kalıcı bildirimli FGS.
- * Bildirim çubuğunda "Koruma aktif" görünmeli; bu servis durursa İMDAT çalışmaz.
+ * Android: native GuardianForegroundService (uygulama öldürülse bile çalışır).
+ * iOS / fallback: ön plan sensör + ses.
  */
 export const BackgroundFallService = {
   async start(options?: MonitorOptions): Promise<void> {
@@ -163,18 +89,15 @@ export const BackgroundFallService = {
 
     if (Platform.OS === 'android') {
       try {
-        await ensureActivityRecognition();
-        await VoiceTriggerService.requestPermission();
-        await BackgroundService.start(guardianTask, {
-          ...notificationOptions,
-          parameters: { sensitivity, fallDetectionEnabled },
-        });
+        await pushNativeConfig(options);
+        await startGuardian();
+        // Ön plandayken de JS ses yedek (native asıl kaynak)
+        if (!useFallAlertStore.getState().active) {
+          await VoiceTriggerService.startEmergencyMode(onVoiceEmergency);
+        }
         return;
       } catch (error) {
-        console.warn(
-          '[BackgroundFallService] FGS başlatılamadı, ön plan moduna düşülüyor',
-          error
-        );
+        console.warn('[BackgroundFallService] Native guardian failed', error);
       }
     }
 
@@ -187,19 +110,15 @@ export const BackgroundFallService = {
     await VoiceTriggerService.startEmergencyMode(onVoiceEmergency);
 
     appStateSub = AppState.addEventListener('change', (state) => {
-      if (state === 'active' && !FallDetectionService.isAlertPaused()) {
-        if (
-          useAppStore.getState().settings.sensors.fallDetectionEnabled
-        ) {
+      if (state === 'active' && !useFallAlertStore.getState().active) {
+        if (useAppStore.getState().settings.sensors.fallDetectionEnabled) {
           foregroundUnsubscribe?.();
           foregroundUnsubscribe = FallDetectionService.start(
             onFallDetected,
             sensitivity
           );
         }
-        if (!useFallAlertStore.getState().active) {
-          void VoiceTriggerService.startEmergencyMode(onVoiceEmergency);
-        }
+        void VoiceTriggerService.startEmergencyMode(onVoiceEmergency);
       }
     });
   },
@@ -211,18 +130,43 @@ export const BackgroundFallService = {
     appStateSub = null;
     FallDetectionService.stop();
 
-    if (Platform.OS === 'android' && BackgroundService.isRunning()) {
+    if (Platform.OS === 'android') {
       try {
-        await BackgroundService.stop();
+        await stopGuardian();
       } catch {
         // ignore
       }
     }
   },
 
+  async cancelNativeAlert(): Promise<void> {
+    if (Platform.OS !== 'android') return;
+    try {
+      await cancelGuardianAlert();
+    } catch {
+      // ignore
+    }
+  },
+
+  async syncPhones(): Promise<void> {
+    if (Platform.OS !== 'android') return;
+    try {
+      await pushNativeConfig();
+      if (!isGuardianRunning()) {
+        await startGuardian();
+      }
+    } catch {
+      // ignore
+    }
+  },
+
   isRunning(): boolean {
     if (Platform.OS === 'android') {
-      return BackgroundService.isRunning();
+      try {
+        return isGuardianRunning();
+      } catch {
+        return false;
+      }
     }
     return foregroundUnsubscribe != null || VoiceTriggerService.isListening();
   },

@@ -110,10 +110,11 @@ export const FallDetectionService = {
 
   openFallCountdown(
     seconds = 10,
-    reason = 'Düşme algılandı (serbest düşüş + darbe + hareketsizlik)'
+    reason = 'Düşme algılandı (serbest düşüş + darbe + hareketsizlik)',
+    nativeOwned = false
   ) {
     this.pauseAlerts();
-    useFallAlertStore.getState().startCountdown(seconds, reason);
+    useFallAlertStore.getState().startCountdown(seconds, reason, { nativeOwned });
   },
 
   /**

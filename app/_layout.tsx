@@ -1,5 +1,6 @@
 import '@/services/fallWatchdogTask';
 
+import * as Linking from 'expo-linking';
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -13,12 +14,29 @@ import { FallDetectionService } from '@/services/FallDetectionService';
 import { NotificationService } from '@/services/NotificationService';
 import { VoiceTriggerService } from '@/services/VoiceTriggerService';
 import { useAppStore } from '@/store/appStore';
-import { useFallAlertStore } from '@/store/fallAlertStore';
+
+function handleGuardianDeepLink(url: string | null) {
+  if (!url) return;
+  try {
+    const parsed = Linking.parse(url);
+    const host = parsed.hostname ?? '';
+    const path = `${parsed.path ?? ''}`.replace(/^\//, '');
+    if (host === 'countdown' || path === 'countdown' || path.startsWith('countdown')) {
+      const reason =
+        (parsed.queryParams?.reason as string) || 'Acil durum algılandı';
+      const seconds = Number(parsed.queryParams?.seconds ?? 10) || 10;
+      FallDetectionService.openFallCountdown(seconds, reason, true);
+    }
+  } catch (error) {
+    console.warn('[DeepLink]', error);
+  }
+}
 
 export default function RootLayout() {
   const medicines = useAppStore((s) => s.medicines);
   const sensors = useAppStore((s) => s.settings.sensors);
   const onboardingCompleted = useAppStore((s) => s.onboardingCompleted);
+  const emergencyContacts = useAppStore((s) => s.emergencyContacts);
 
   useEffect(() => {
     if (!onboardingCompleted) return;
@@ -34,10 +52,18 @@ export default function RootLayout() {
     return () => cleanup?.();
   }, [onboardingCompleted]);
 
+  // Native guardian deep link (uygulama kapalıyken tetik)
+  useEffect(() => {
+    void Linking.getInitialURL().then(handleGuardianDeepLink);
+    const sub = Linking.addEventListener('url', ({ url }) => {
+      handleGuardianDeepLink(url);
+    });
+    return () => sub.remove();
+  }, []);
+
   /**
-   * Koruma servisi — onboarding sonrası HER ZAMAN çalışır (uygulama kapalıyken de).
-   * Düşme kapalı olsa bile İMDAT dinleme FGS içinde devam eder.
-   * Arka planda VoiceTrigger STOP ETME — önceki hata buydu.
+   * Native GuardianForegroundService — uygulama öldürülse bile çalışır.
+   * Bildirim: "Koruma aktif". Recent'ten kaydırınca da onTaskRemoved ile kalkar.
    */
   useEffect(() => {
     if (!onboardingCompleted) {
@@ -54,8 +80,6 @@ export default function RootLayout() {
 
     const onAppState = (state: AppStateStatus) => {
       if (state !== 'active') return;
-
-      // Servis ölmüşse (OEM öldürmüş olabilir) yeniden başlat
       if (!BackgroundFallService.isRunning()) {
         void BackgroundFallService.start({
           sensitivity: useAppStore.getState().settings.sensors.fallSensitivity,
@@ -64,37 +88,19 @@ export default function RootLayout() {
           fallDetectionEnabled:
             useAppStore.getState().settings.sensors.fallDetectionEnabled,
         });
-        return;
-      }
-
-      // Overlay yokken ses düştüyse toparla
-      if (
-        !useFallAlertStore.getState().active &&
-        VoiceTriggerService.getMode() === 'off'
-      ) {
-        void VoiceTriggerService.startEmergencyMode(() => {
-          const seconds =
-            useAppStore.getState().settings.sensors.fallCountdownSeconds ?? 10;
-          FallDetectionService.openFallCountdown(
-            seconds,
-            'Sesli imdat komutu algılandı'
-          );
-        });
+      } else {
+        void BackgroundFallService.syncPhones();
       }
     };
 
     const sub = AppState.addEventListener('change', onAppState);
-
-    return () => {
-      sub.remove();
-      // Root unmount / ayar değişiminde yeniden start edilecek — burada stop etme
-      // (stop, onboarding kapanınca veya explicit disable'da yapılır)
-    };
+    return () => sub.remove();
   }, [
     onboardingCompleted,
     sensors.fallDetectionEnabled,
     sensors.fallSensitivity,
     sensors.fallCountdownSeconds,
+    emergencyContacts,
   ]);
 
   return (

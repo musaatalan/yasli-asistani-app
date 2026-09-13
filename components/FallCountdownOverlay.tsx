@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 
 import { Colors, Typography } from '@/constants/theme';
+import { BackgroundFallService } from '@/services/BackgroundFallService';
 import { FallDetectionService } from '@/services/FallDetectionService';
 import { NotificationService } from '@/services/NotificationService';
 import { SirenService } from '@/services/SirenService';
@@ -28,6 +29,7 @@ async function resumeEmergencyListening() {
 }
 
 async function performCancelCleanup() {
+  await BackgroundFallService.cancelNativeAlert();
   await SirenService.stop();
   await resumeEmergencyListening();
 }
@@ -125,6 +127,7 @@ export function FallCountdownOverlay() {
     if (!active || secondsLeft > 0 || firingRef.current) return;
 
     firingRef.current = true;
+    const wasNativeOwned = useFallAlertStore.getState().nativeOwned;
     const shouldFire = consumeExpired();
     if (!shouldFire) {
       firingRef.current = false;
@@ -135,6 +138,15 @@ export function FallCountdownOverlay() {
       try {
         await VoiceTriggerService.stop();
         await SirenService.stop();
+
+        // Native guardian zaten SMS+arama yapacak — çift gönderim yok
+        if (wasNativeOwned) {
+          await NotificationService.sendImmediateAlert(
+            'Acil durum',
+            'Yakınlarınız bilgilendiriliyor…'
+          );
+          return;
+        }
 
         const { emergencyContacts, settings } = useAppStore.getState();
         const phones = SosService.collectPhones(emergencyContacts);

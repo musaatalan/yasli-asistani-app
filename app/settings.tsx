@@ -18,8 +18,10 @@ import { Colors, Spacing, Typography } from '@/constants/theme';
 import { pickAndPersistContactPhoto } from '@/services/PhotoService';
 import { PermissionService } from '@/services/PermissionService';
 import { SosService } from '@/services/SosService';
+import { BackgroundFallService } from '@/services/BackgroundFallService';
 import { FallDetectionService } from '@/services/FallDetectionService';
 import { useAppStore } from '@/store/appStore';
+import { openGuardianBatterySettings } from 'guardian-native';
 
 export default function SettingsScreen() {
   const settings = useAppStore((s) => s.settings);
@@ -82,6 +84,7 @@ export default function SettingsScreen() {
     }
 
     Alert.alert('Kaydedildi', 'Ayarlar güncellendi.');
+    void BackgroundFallService.syncPhones();
   };
 
   const runSosTest = async () => {
@@ -220,10 +223,19 @@ export default function SettingsScreen() {
           <Text style={styles.sosTestText}>SOS test modu (arama/SMS yok)</Text>
         </Pressable>
 
+        <Pressable
+          style={styles.permBtnSecondary}
+          onPress={() => void openGuardianBatterySettings()}
+        >
+          <Text style={styles.permBtnSecondaryText}>
+            Pil kısıtlamasını kaldır (zorunlu)
+          </Text>
+        </Pressable>
+
         <Text style={styles.hint}>
-          Uygulamayı kapatınca koruma sürmesi için bildirim çubuğunda “Koruma
-          aktif” görünmeli. Telefonda: Ayarlar → Uygulamalar → Güvenli Yaşlı
-          Asistanı → Pil → Kısıtlama yok. Uygulamayı “Zorla durdur” yapmayın.
+          Uygulama kapalıyken koruma için bildirimde “Koruma aktif” görünmeli.
+          Pil → Kısıtlama yok. “Zorla durdur” yapmayın. Telefonu yeniden
+          başlatınca koruma otomatik açılır.
         </Text>
 
         <Text style={styles.section}>Sensörler</Text>
