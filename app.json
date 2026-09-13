@@ -1,42 +1,83 @@
 {
   "expo": {
-    "name": "YasliAsistaniApp",
+    "name": "Güvenli Yaşlı Asistanı",
     "slug": "YasliAsistaniApp",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/icon.png",
-    "scheme": "yasliasistaniapp",
-    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "scheme": "yasliasistani",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B1F33"
+    },
     "ios": {
-      "icon": "./assets/expo.icon"
+      "supportsTablet": true,
+      "bundleIdentifier": "com.musaatalan.yasliasistani",
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Acil durumda konumunuzu yakınlarınıza iletmek için gereklidir.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Düşme algılama sırasında arka planda konum paylaşımı için gereklidir.",
+        "NSMicrophoneUsageDescription": "Yüksek ses tespiti için mikrofon erişimi gereklidir.",
+        "NSPhotoLibraryUsageDescription": "Hızlı rehbere yakınlarınızın fotoğrafını eklemek için galeri erişimi gerekir.",
+        "UIBackgroundModes": ["location", "audio"]
+      }
     },
     "android": {
+      "package": "com.musaatalan.yasliasistani",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/android-icon-foreground.png",
-        "backgroundImage": "./assets/images/android-icon-background.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
+        "backgroundColor": "#0B1F33",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
       },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "SEND_SMS",
+        "CALL_PHONE",
+        "RECORD_AUDIO",
+        "VIBRATE",
+        "RECEIVE_BOOT_COMPLETED",
+        "SCHEDULE_EXACT_ALARM",
+        "POST_NOTIFICATIONS",
+        "READ_MEDIA_IMAGES",
+        "READ_EXTERNAL_STORAGE"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "output": "static",
-      "favicon": "./assets/images/favicon.png"
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro"
     },
     "plugins": [
       "expo-router",
+      "expo-font",
       [
-        "expo-splash-screen",
+        "expo-location",
         {
-          "backgroundColor": "#208AEF",
-          "image": "./assets/images/splash-icon.png",
-          "imageWidth": 76
+          "locationAlwaysAndWhenInUsePermission": "Acil durumda konumunuzu yakınlarınıza iletmek için gereklidir.",
+          "isAndroidBackgroundLocationEnabled": true
         }
-      ]
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Hızlı rehbere yakınlarınızın fotoğrafını eklemek için galeri erişimi gerekir."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "sounds": []
+        }
+      ],
+      "expo-av"
     ],
     "experiments": {
-      "typedRoutes": true,
-      "reactCompiler": true
+      "typedRoutes": true
     }
   }
 }
