@@ -85,4 +85,5 @@ export type SosResult = {
   calledPhone: string | null;
   locationAttached: boolean;
   message: string;
+  error?: string;
 };

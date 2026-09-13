@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Alert,
   Modal,
   Pressable,
   StyleSheet,
@@ -26,13 +27,32 @@ async function resumeEmergencyListening() {
   });
 }
 
-/**
- * Ortak iptal: sesli veya dokunmatik.
- * Sayaç sıfırlanır, siren durur, SOS iptal, dinleme acil moda döner.
- */
 async function performCancelCleanup() {
   await SirenService.stop();
   await resumeEmergencyListening();
+}
+
+function describeSosResult(result: {
+  smsOpened: boolean;
+  calledPhone: string | null;
+  locationAttached: boolean;
+  error?: string;
+}): string {
+  if (result.error && !result.smsOpened && !result.calledPhone) {
+    return result.error;
+  }
+  return [
+    result.locationAttached ? 'Konum mesaja eklendi.' : 'Konum alınamadı.',
+    result.smsOpened
+      ? "SMS ekranı açıldı — Gönder'e basın."
+      : 'SMS açılamadı.',
+    result.calledPhone
+      ? `Arama başlatıldı: ${result.calledPhone}`
+      : 'Arama başlatılamadı.',
+    result.error ?? '',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 export function FallCountdownOverlay() {
@@ -45,8 +65,6 @@ export function FallCountdownOverlay() {
   const clearCancelledBanner = useFallAlertStore((s) => s.clearCancelledBanner);
   const consumeExpired = useFallAlertStore((s) => s.consumeExpired);
 
-  const emergencyContacts = useAppStore((s) => s.emergencyContacts);
-  const emergencyMessage = useAppStore((s) => s.settings.emergencyMessage);
   const firingRef = useRef(false);
   const [voiceHint, setVoiceHint] = useState('Yüksek sesle: İPTAL · İYİYİM · DUR');
 
@@ -63,7 +81,6 @@ export function FallCountdownOverlay() {
     return () => clearInterval(id);
   }, [active, tick]);
 
-  // Overlay açılınca: Acil kelimeler → İptal kelimeleri + siren
   useEffect(() => {
     if (!active) return;
 
@@ -92,7 +109,6 @@ export function FallCountdownOverlay() {
     return () => {
       disposed = true;
       void SirenService.stop();
-      // Acil moda dönüş cancel/expire akışında yapılır; unmount'ta bırakma
       if (VoiceTriggerService.getMode() === 'cancel') {
         void VoiceTriggerService.stop();
       }
@@ -100,7 +116,6 @@ export function FallCountdownOverlay() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active]);
 
-  // Süre doldu → SOS, sonra tekrar acil dinleme
   useEffect(() => {
     if (!active || secondsLeft > 0 || firingRef.current) return;
 
@@ -116,21 +131,45 @@ export function FallCountdownOverlay() {
         await VoiceTriggerService.stop();
         await SirenService.stop();
 
+        const { emergencyContacts, settings } = useAppStore.getState();
+        const phones = SosService.collectPhones(emergencyContacts);
+
+        if (phones.length === 0) {
+          await NotificationService.sendImmediateAlert(
+            'SOS — Numara yok',
+            'Acil kişi telefonu kayıtlı değil. Ayarlardan numara ekleyin.'
+          );
+          Alert.alert(
+            'Acil numara yok',
+            "SMS/arama yapılamadı.\n\nAyarlar (kilit) → Acil Kişi telefonunu girip Kaydet'e basın."
+          );
+          return;
+        }
+
         await NotificationService.sendImmediateAlert(
           'Düşme — SOS',
-          'Geri sayım bitti, acil kişiler bilgilendiriliyor.'
+          'SMS ve arama başlatılıyor…'
         );
-        await SosService.triggerSos(
+
+        const result = await SosService.triggerSos(
           emergencyContacts,
-          emergencyMessage,
+          settings.emergencyMessage,
           'DÜŞME ALGILANDI'
+        );
+
+        Alert.alert('SOS Durumu', describeSosResult(result));
+      } catch (error) {
+        console.warn('[FallCountdown] SOS error', error);
+        Alert.alert(
+          'SOS hatası',
+          'SMS veya arama başlatılamadı. Ayarlardan numarayı kontrol edin.'
         );
       } finally {
         await resumeEmergencyListening();
         firingRef.current = false;
       }
     })();
-  }, [active, secondsLeft, consumeExpired, emergencyContacts, emergencyMessage]);
+  }, [active, secondsLeft, consumeExpired]);
 
   useEffect(() => {
     if (!cancelledBanner) return;

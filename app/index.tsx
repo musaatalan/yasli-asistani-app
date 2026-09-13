@@ -18,33 +18,33 @@ import { useAppStore } from '@/store/appStore';
 
 export default function HomeScreen() {
   const userName = useAppStore((s) => s.settings.userName);
-  const emergencyContacts = useAppStore((s) => s.emergencyContacts);
-  const emergencyMessage = useAppStore((s) => s.settings.emergencyMessage);
   const fallEnabled = useAppStore((s) => s.settings.sensors.fallDetectionEnabled);
   const [sosLoading, setSosLoading] = useState(false);
 
   const handleSos = async () => {
     setSosLoading(true);
     try {
-      const result = await SosService.triggerSos(
-        emergencyContacts,
-        emergencyMessage,
-        'ACİL DURUM'
-      );
-      Alert.alert(
-        'SOS Gönderildi',
-        [
-          result.locationAttached
-            ? 'Konum mesaja eklendi.'
-            : 'Konum alınamadı.',
-          result.smsOpened
-            ? 'SMS hazırlandı/gönderildi.'
-            : 'SMS açılamadı — acil kişi numarasını ayarlardan girin.',
-          result.calledPhone
-            ? `Arama başlatıldı: ${result.calledPhone}`
-            : 'Aranacak numara bulunamadı.',
-        ].join('\n')
-      );
+      const contacts = useAppStore.getState().emergencyContacts;
+      const message = useAppStore.getState().settings.emergencyMessage;
+      const result = await SosService.triggerSos(contacts, message, 'ACİL DURUM');
+      const failed = Boolean(result.error && !result.smsOpened && !result.calledPhone);
+      const body = failed
+        ? result.error!
+        : [
+            result.locationAttached
+              ? 'Konum mesaja eklendi.'
+              : 'Konum alınamadı.',
+            result.smsOpened
+              ? "SMS ekranı açıldı — Gönder'e basın."
+              : 'SMS açılamadı — acil kişi numarasını ayarlardan girin.',
+            result.calledPhone
+              ? `Arama başlatıldı: ${result.calledPhone}`
+              : 'Arama başlatılamadı.',
+            result.error ?? '',
+          ]
+            .filter(Boolean)
+            .join('\n');
+      Alert.alert(failed ? 'SOS yapılamadı' : 'SOS Durumu', body);
     } catch {
       Alert.alert('Hata', 'SOS işlemi tamamlanamadı. Lütfen tekrar deneyin.');
     } finally {
