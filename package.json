@@ -1,6 +1,6 @@
 {
   "name": "yasliasistaniapp",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -13,7 +13,8 @@
     "@react-native-async-storage/async-storage": "2.2.0",
     "babel-preset-expo": "~57.0.0",
     "expo": "~57.0.22",
-    "expo-av": "^16.0.8",
+    "expo-asset": "~57.0.17",
+    "expo-audio": "~57.0.5",
     "expo-constants": "~57.0.18",
     "expo-device": "~57.0.2",
     "expo-file-system": "~57.0.7",
@@ -47,7 +48,7 @@
   "expo": {
     "doctor": {
       "reactNativeDirectoryCheck": {
-        "exclude": ["expo-av"]
+        "exclude": []
       }
     }
   },

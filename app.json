@@ -2,7 +2,7 @@
   "expo": {
     "name": "Güvenli Yaşlı Asistanı",
     "slug": "YasliAsistani",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "yasliasistani",
@@ -15,7 +15,10 @@
         "NSLocationAlwaysAndWhenInUseUsageDescription": "Düşme algılama sırasında arka planda konum paylaşımı için gereklidir.",
         "NSMicrophoneUsageDescription": "Yüksek ses tespiti için mikrofon erişimi gereklidir.",
         "NSPhotoLibraryUsageDescription": "Hızlı rehbere yakınlarınızın fotoğrafını eklemek için galeri erişimi gerekir.",
-        "UIBackgroundModes": ["location", "audio"]
+        "UIBackgroundModes": [
+          "location",
+          "audio"
+        ]
       }
     },
     "android": {
@@ -80,7 +83,8 @@
           "sounds": []
         }
       ],
-      "expo-av"
+      "expo-audio",
+      "expo-asset"
     ],
     "experiments": {
       "typedRoutes": true
