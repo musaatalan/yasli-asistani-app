@@ -7,90 +7,231 @@ export type FallSensitivity = 'low' | 'medium' | 'high';
 type FallListener = () => void;
 type Unsubscribe = () => void;
 
+type Phase = 'idle' | 'freefall' | 'impact' | 'stillness';
+
 type Thresholds = {
+  /** Darbe eşiği (kullanıcı: > 2.8G) */
   impactG: number;
+  /** Serbest düşüş eşiği */
   freefallG: number;
-  freefallWindowMs: number;
+  /** Serbest düşüşün en az bu süre devam etmesi */
+  freefallMinMs: number;
+  /** Serbest düşüşten darbeye kadar max pencere */
+  freefallToImpactMs: number;
+  /** Darbeden sonra hareketsizlik kontrol süresi */
+  stillnessMs: number;
+  /** Hareketsizlikte |g-1| üst sınırı */
+  stillnessBandG: number;
+  /** Hareketsizlik sırasında ani hareket eşiği */
+  motionDeltaG: number;
   cooldownMs: number;
 };
 
 const PRESETS: Record<FallSensitivity, Thresholds> = {
-  high: { impactG: 2.0, freefallG: 0.45, freefallWindowMs: 1200, cooldownMs: 20000 },
-  medium: { impactG: 2.5, freefallG: 0.4, freefallWindowMs: 1000, cooldownMs: 25000 },
-  low: { impactG: 3.2, freefallG: 0.35, freefallWindowMs: 800, cooldownMs: 30000 },
+  // impact sabit ~2.8G; diğerleri hassasiyete göre
+  high: {
+    impactG: 2.6,
+    freefallG: 0.5,
+    freefallMinMs: 80,
+    freefallToImpactMs: 1200,
+    stillnessMs: 2000,
+    stillnessBandG: 0.45,
+    motionDeltaG: 0.35,
+    cooldownMs: 20000,
+  },
+  medium: {
+    impactG: 2.8,
+    freefallG: 0.45,
+    freefallMinMs: 100,
+    freefallToImpactMs: 1000,
+    stillnessMs: 2000,
+    stillnessBandG: 0.4,
+    motionDeltaG: 0.4,
+    cooldownMs: 25000,
+  },
+  low: {
+    impactG: 3.0,
+    freefallG: 0.4,
+    freefallMinMs: 120,
+    freefallToImpactMs: 900,
+    stillnessMs: 2000,
+    stillnessBandG: 0.35,
+    motionDeltaG: 0.45,
+    cooldownMs: 30000,
+  },
 };
 
 let subscription: { remove: () => void } | null = null;
 let lastTriggerAt = 0;
-let impactAt: number | null = null;
-/** Geri sayım / SOS sırasında yeni düşme tetiklemeyi engeller */
 let alertPaused = false;
 
+let phase: Phase = 'idle';
+let freefallStartedAt: number | null = null;
+let impactAt: number | null = null;
+let lastG = 1;
+let stillnessMotionHits = 0;
+
+function resetPhase() {
+  phase = 'idle';
+  freefallStartedAt = null;
+  impactAt = null;
+  stillnessMotionHits = 0;
+}
+
+function magnitude(x: number, y: number, z: number) {
+  return Math.sqrt(x * x + y * y + z * z);
+}
+
 /**
- * Düşme algılama:
- * 1) Ani darbe (total acceleration > impactG)
- * 2) Kısa süre içinde serbest düşüş / düşük ivme (freefallG)
- * Ardından UI 10 sn geri sayım + sesli/dokunmatik iptal → aksi halde SOS
+ * Düşme algılama state machine:
+ * Serbest Düşüş → Darbe (>~2.8G) → 2 sn Hareketsizlik
+ *
+ * Darbeden sonra 2 sn içinde cihaz tekrar hareket ederse
+ * (elden alma / koltuğa atma) sayaç BAŞLAMAZ.
  */
 export const FallDetectionService = {
-  /** Overlay açıkken ivme dinleyicisini fiilen askıya al */
   pauseAlerts() {
     alertPaused = true;
+    resetPhase();
   },
 
-  /** Overlay kapandıktan sonra yeniden düşme algılamaya izin ver */
   resumeAlerts() {
     alertPaused = false;
+    resetPhase();
   },
 
   isAlertPaused(): boolean {
     return alertPaused;
   },
 
-  /**
-   * Düşme olayını global geri sayım store'una iletir.
-   * Sesli/dokunmatik iptal FallCountdownOverlay + VoiceTriggerService tarafında yönetilir.
-   */
-  openFallCountdown(seconds = 10, reason = 'Şiddetli ivme / olası düşme tespit edildi') {
+  getPhase(): Phase {
+    return phase;
+  },
+
+  openFallCountdown(
+    seconds = 10,
+    reason = 'Düşme algılandı (serbest düşüş + darbe + hareketsizlik)'
+  ) {
     this.pauseAlerts();
     useFallAlertStore.getState().startCountdown(seconds, reason);
+  },
+
+  /**
+   * Tek örnek işleme — hem ön planda hem foreground service içinde kullanılır.
+   */
+  processSample(
+    x: number,
+    y: number,
+    z: number,
+    onFallDetected: FallListener,
+    sensitivity: FallSensitivity = 'medium'
+  ) {
+    if (alertPaused || useFallAlertStore.getState().active) {
+      return;
+    }
+
+    const t = PRESETS[sensitivity];
+    const g = magnitude(x, y, z);
+    const now = Date.now();
+    const delta = Math.abs(g - lastG);
+    lastG = g;
+
+    switch (phase) {
+      case 'idle': {
+        if (g <= t.freefallG) {
+          phase = 'freefall';
+          freefallStartedAt = now;
+        }
+        break;
+      }
+
+      case 'freefall': {
+        if (freefallStartedAt == null) {
+          resetPhase();
+          break;
+        }
+
+        // Hâlâ düşüşte
+        if (g <= t.freefallG) {
+          break;
+        }
+
+        const freefallDuration = now - freefallStartedAt;
+
+        // Darbe
+        if (g >= t.impactG && freefallDuration >= t.freefallMinMs) {
+          phase = 'stillness';
+          impactAt = now;
+          stillnessMotionHits = 0;
+          break;
+        }
+
+        // Serbest düşüş penceresi doldu / geçersiz
+        if (now - freefallStartedAt > t.freefallToImpactMs) {
+          resetPhase();
+        } else if (g > t.freefallG && g < t.impactG) {
+          // Ara değer — düşüş bitti ama darbe yok; bekle veya sıfırla
+          if (freefallDuration < t.freefallMinMs) {
+            resetPhase();
+          }
+        }
+        break;
+      }
+
+      case 'stillness': {
+        if (impactAt == null) {
+          resetPhase();
+          break;
+        }
+
+        const elapsed = now - impactAt;
+
+        // Elden alma / sallanma: yerçekimi bandı dışı veya ani delta
+        const movedFromGravity = Math.abs(g - 1) > t.stillnessBandG;
+        const suddenMove = delta > t.motionDeltaG;
+        const secondaryImpact = g >= t.impactG * 0.85;
+
+        if ((movedFromGravity && suddenMove) || secondaryImpact) {
+          // Yanlış alarm — cihaz tekrar hareket etti
+          resetPhase();
+          break;
+        }
+
+        if (movedFromGravity || suddenMove) {
+          stillnessMotionHits += 1;
+          // Birkaç gürültülü örnek tolere et; sürekli hareket = iptal
+          if (stillnessMotionHits >= 3) {
+            resetPhase();
+            break;
+          }
+        }
+
+        if (elapsed >= t.stillnessMs) {
+          if (now - lastTriggerAt < t.cooldownMs) {
+            resetPhase();
+            break;
+          }
+          lastTriggerAt = now;
+          resetPhase();
+          onFallDetected();
+        }
+        break;
+      }
+
+      default:
+        resetPhase();
+    }
   },
 
   start(onFallDetected: FallListener, sensitivity: FallSensitivity = 'medium'): Unsubscribe {
     this.stop();
     alertPaused = false;
+    resetPhase();
 
-    const thresholds = PRESETS[sensitivity];
     Accelerometer.setUpdateInterval(50);
 
     subscription = Accelerometer.addListener(({ x, y, z }) => {
-      if (alertPaused || useFallAlertStore.getState().active) {
-        return;
-      }
-
-      const g = Math.sqrt(x * x + y * y + z * z);
-      const now = Date.now();
-
-      if (g >= thresholds.impactG) {
-        impactAt = now;
-        return;
-      }
-
-      if (
-        impactAt &&
-        now - impactAt <= thresholds.freefallWindowMs &&
-        g <= thresholds.freefallG
-      ) {
-        impactAt = null;
-        if (now - lastTriggerAt < thresholds.cooldownMs) return;
-        lastTriggerAt = now;
-        onFallDetected();
-        return;
-      }
-
-      if (impactAt && now - impactAt > thresholds.freefallWindowMs) {
-        impactAt = null;
-      }
+      this.processSample(x, y, z, onFallDetected, sensitivity);
     });
 
     return () => this.stop();
@@ -99,10 +240,9 @@ export const FallDetectionService = {
   stop() {
     subscription?.remove();
     subscription = null;
-    impactAt = null;
+    resetPhase();
   },
 
-  /** Test / demo: düşme olayını elle tetikle */
   simulateFall(onFallDetected: FallListener) {
     onFallDetected();
   },

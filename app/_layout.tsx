@@ -1,3 +1,5 @@
+import '@/services/fallWatchdogTask';
+
 import { Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { useEffect } from 'react';
@@ -6,6 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { FallCountdownOverlay } from '@/components/FallCountdownOverlay';
 import { Colors } from '@/constants/theme';
+import { BackgroundFallService } from '@/services/BackgroundFallService';
 import { FallDetectionService } from '@/services/FallDetectionService';
 import { NotificationService } from '@/services/NotificationService';
 import { VoiceTriggerService } from '@/services/VoiceTriggerService';
@@ -20,21 +23,21 @@ export default function RootLayout() {
     void NotificationService.scheduleMedicineReminders(medicines);
   }, [medicines]);
 
-  // Düşme algılama (ivmeölçer)
+  // Düşme algılama — Android foreground service + stillness filtreli sensör
   useEffect(() => {
     if (!sensors.fallDetectionEnabled) {
-      FallDetectionService.stop();
+      void BackgroundFallService.stop();
       return;
     }
 
-    const stop = FallDetectionService.start(() => {
-      FallDetectionService.openFallCountdown(
-        sensors.fallCountdownSeconds ?? 10,
-        'Şiddetli ivme / olası düşme tespit edildi'
-      );
-    }, sensors.fallSensitivity);
+    void BackgroundFallService.start({
+      sensitivity: sensors.fallSensitivity,
+      countdownSeconds: sensors.fallCountdownSeconds,
+    });
 
-    return stop;
+    return () => {
+      void BackgroundFallService.stop();
+    };
   }, [
     sensors.fallDetectionEnabled,
     sensors.fallSensitivity,
@@ -61,8 +64,14 @@ export default function RootLayout() {
     const onAppState = (state: AppStateStatus) => {
       if (state === 'active') {
         startEmergency();
+        // Servis düşmüşse yeniden başlat
+        if (
+          useAppStore.getState().settings.sensors.fallDetectionEnabled &&
+          !BackgroundFallService.isRunning()
+        ) {
+          void BackgroundFallService.start();
+        }
       } else if (state === 'background' || state === 'inactive') {
-        // Arka planda sürekli tanıma çoğu cihazda kısıtlı; kaynakları bırak
         void VoiceTriggerService.stop();
       }
     };

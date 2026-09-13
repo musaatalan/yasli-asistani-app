@@ -2,7 +2,7 @@
   "expo": {
     "name": "Güvenli Yaşlı Asistanı",
     "slug": "YasliAsistani",
-    "version": "1.0.2",
+    "version": "1.0.3",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "yasliasistani",
@@ -17,7 +17,8 @@
         "NSPhotoLibraryUsageDescription": "Hızlı rehbere yakınlarınızın fotoğrafını eklemek için galeri erişimi gerekir.",
         "UIBackgroundModes": [
           "location",
-          "audio"
+          "audio",
+          "processing"
         ]
       }
     },
@@ -44,7 +45,11 @@
         "READ_EXTERNAL_STORAGE",
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_LOCATION",
-        "MODIFY_AUDIO_SETTINGS"
+        "FOREGROUND_SERVICE_HEALTH",
+        "FOREGROUND_SERVICE_SPECIAL_USE",
+        "WAKE_LOCK",
+        "MODIFY_AUDIO_SETTINGS",
+        "REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -55,6 +60,7 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      "./plugins/withBackgroundFallService.js",
       [
         "expo-splash-screen",
         {
