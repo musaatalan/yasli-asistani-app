@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Güvenli Yaşlı Asistanı",
-    "slug": "YasliAsistaniApp",
+    "slug": "YasliAsistani",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -44,7 +44,10 @@
         "SCHEDULE_EXACT_ALARM",
         "POST_NOTIFICATIONS",
         "READ_MEDIA_IMAGES",
-        "READ_EXTERNAL_STORAGE"
+        "READ_EXTERNAL_STORAGE",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION",
+        "MODIFY_AUDIO_SETTINGS"
       ],
       "predictiveBackGestureEnabled": false
     },
@@ -78,6 +81,13 @@
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "cd059a43-1fc4-46e0-bf3e-bfa899fd0200"
+      }
+    },
+    "owner": "musaatalan"
   }
 }
