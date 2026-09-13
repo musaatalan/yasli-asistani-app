@@ -32,6 +32,26 @@ eas login
 npx eas build --platform android --profile preview
 ```
 
+### GitHub Actions (otomatik APK)
+
+`main` / `master` branch’ine her push’ta `.github/workflows/build-apk.yml` çalışır:
+
+1. EAS `preview` profili ile Android APK üretir  
+2. APK’yı **GitHub Releases** altına yükler  
+
+Gerekli secret (repo → Settings → Secrets and variables → Actions):
+
+| Secret | Açıklama |
+|--------|----------|
+| `EXPO_TOKEN` | [expo.dev/settings/access-tokens](https://expo.dev/settings/access-tokens) üzerinden alınır |
+
+İlk kez EAS kullanıyorsanız bir kez yerelde bağlayın:
+
+```bash
+npx eas login
+npx eas init
+```
+
 ## Proje Yapısı
 
 ```
