@@ -7,12 +7,6 @@
     "icon": "./assets/icon.png",
     "scheme": "yasliasistani",
     "userInterfaceStyle": "light",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0B1F33"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "com.musaatalan.yasliasistani",
@@ -58,6 +52,15 @@
     "plugins": [
       "expo-router",
       "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#0B1F33"
+        }
+      ],
       [
         "expo-location",
         {
