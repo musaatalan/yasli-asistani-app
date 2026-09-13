@@ -48,3 +48,7 @@ coverage/
 *.log
 .idea/
 .vscode/
+eas-list.json
+eas-view-*.json
+eas-build-*.txt
+eas-build-*.json
