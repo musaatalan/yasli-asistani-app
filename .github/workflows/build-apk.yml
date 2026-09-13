@@ -16,7 +16,7 @@ concurrency:
 
 jobs:
   build-apk:
-    name: EAS Android APK → GitHub Release
+    name: Local EAS Android APK → GitHub Release
     runs-on: ubuntu-latest
     timeout-minutes: 120
 
@@ -33,6 +33,9 @@ jobs:
           distribution: temurin
           java-version: "17"
 
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
@@ -48,7 +51,7 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Build APK with EAS
+      - name: Build APK locally with EAS
         id: eas_build
         run: |
           set -euo pipefail
@@ -58,55 +61,25 @@ jobs:
             exit 1
           fi
 
-          echo "Starting EAS Android preview build..."
-          eas build \
-            --platform android \
-            --profile preview \
-            --non-interactive \
-            --wait \
-            --json > eas-build.json
-
-          echo "EAS build JSON:"
-          cat eas-build.json
-
-          APK_URL="$(node -e '
-            const fs = require("fs");
-            const raw = fs.readFileSync("eas-build.json", "utf8");
-            const data = JSON.parse(raw);
-            const build = Array.isArray(data) ? data[0] : data;
-            if (!build) {
-              console.error("Empty EAS build response");
-              process.exit(1);
-            }
-            const url =
-              build?.artifacts?.applicationArchiveUrl ||
-              build?.artifacts?.buildUrl ||
-              build?.applicationArchiveUrl ||
-              "";
-            if (!url) {
-              console.error("No APK URL in EAS response");
-              console.error(JSON.stringify(build, null, 2));
-              process.exit(1);
-            }
-            process.stdout.write(url);
-          ')"
-
-          echo "apk_url=${APK_URL}" >> "$GITHUB_OUTPUT"
-          echo "Downloaded artifact URL resolved."
-
-      - name: Download APK
-        id: download
-        run: |
-          set -euo pipefail
           VERSION="$(node -p "require('./package.json').version")"
           SHORT_SHA="$(echo '${{ github.sha }}' | cut -c1-7)"
           APK_NAME="YasliAsistani-v${VERSION}-${SHORT_SHA}.apk"
 
-          curl --fail --location --retry 3 \
-            --output "${APK_NAME}" \
-            "${{ steps.eas_build.outputs.apk_url }}"
+          echo "Starting local EAS Android preview build (avoids Expo cloud quota)..."
+          eas build \
+            --platform android \
+            --profile preview \
+            --local \
+            --non-interactive \
+            --output "./${APK_NAME}"
 
-          ls -lh "${APK_NAME}"
+          if [ ! -f "./${APK_NAME}" ]; then
+            echo "::error::APK not found at ./${APK_NAME}"
+            ls -la .
+            exit 1
+          fi
+
+          ls -lh "./${APK_NAME}"
           echo "apk_name=${APK_NAME}" >> "$GITHUB_OUTPUT"
 
       - name: Create GitHub Release and upload APK
@@ -115,15 +88,15 @@ jobs:
           tag_name: apk-${{ github.run_number }}-${{ github.sha }}
           name: APK Build #${{ github.run_number }}
           body: |
-            Otomatik EAS preview APK çıktısı.
+            Otomatik yerel EAS preview APK çıktısı.
 
             - **Commit:** `${{ github.sha }}`
             - **Branch:** `${{ github.ref_name }}`
-            - **Profil:** `preview`
+            - **Profil:** `preview` (local)
             - **Workflow run:** ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
             Bu release GitHub Actions tarafından oluşturulmuştur.
-          files: ${{ steps.download.outputs.apk_name }}
+          files: ${{ steps.eas_build.outputs.apk_name }}
           draft: false
           prerelease: true
           generate_release_notes: true
