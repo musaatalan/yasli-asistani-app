@@ -82,6 +82,8 @@ export type AppState = {
 
 export type SosResult = {
   smsOpened: boolean;
+  smsSentCount: number;
+  smsFailedCount: number;
   calledPhone: string | null;
   locationAttached: boolean;
   message: string;

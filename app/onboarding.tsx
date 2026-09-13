@@ -83,6 +83,7 @@ export default function OnboardingScreen() {
         i.key === 'location' ||
         i.key === 'microphone' ||
         i.key === 'callPhone' ||
+        i.key === 'sendSms' ||
         i.key === 'activity')
   );
 
@@ -95,8 +96,8 @@ export default function OnboardingScreen() {
         <Text style={styles.brand}>Güvenli Yaşlı Asistanı</Text>
         <Text style={styles.title}>Kurulum</Text>
         <Text style={styles.subtitle}>
-          Acil durum için önce yakınınızın numarasını girin, sonra tüm izinleri
-          verin.
+          Acil durumda SMS otomatik gider, ardından arama yapılır. Önce numara
+          girin, sonra tüm izinleri (özellikle SMS ve Arama) verin.
         </Text>
 
         <Text style={styles.section}>1. Acil kişi</Text>

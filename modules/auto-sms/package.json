@@ -1,0 +1,16 @@
+{
+  "name": "auto-sms",
+  "version": "0.1.0",
+  "description": "Silent SMS sending via Android SmsManager for emergency SOS",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {},
+  "keywords": ["expo", "sms", "emergency"],
+  "author": "musaatalan",
+  "license": "MIT",
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  }
+}

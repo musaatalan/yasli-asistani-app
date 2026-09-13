@@ -13,6 +13,7 @@ export type PermissionKey =
   | 'backgroundLocation'
   | 'microphone'
   | 'callPhone'
+  | 'sendSms'
   | 'activity'
   | 'photos'
   | 'battery';
@@ -141,6 +142,36 @@ async function requestActivity(): Promise<boolean> {
   }
 }
 
+async function checkSendSms(): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+  try {
+    return await PermissionsAndroid.check(
+      PermissionsAndroid.PERMISSIONS.SEND_SMS
+    );
+  } catch {
+    return false;
+  }
+}
+
+async function requestSendSms(): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+  try {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.SEND_SMS,
+      {
+        title: 'SMS gönderme izni',
+        message:
+          'Acil durumda yakınıza otomatik (dokunmadan) SMS göndermek için gerekir.',
+        buttonPositive: 'İzin ver',
+        buttonNegative: 'Hayır',
+      }
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
+    return false;
+  }
+}
+
 async function checkPhotos(): Promise<boolean> {
   const current = await ImagePicker.getMediaLibraryPermissionsAsync();
   return current.granted;
@@ -196,6 +227,10 @@ const META: Record<
     title: 'Telefon araması',
     description: 'Acil kişiyi otomatik aramak için',
   },
+  sendSms: {
+    title: 'Otomatik SMS',
+    description: 'Düşmede yakına dokunmadan mesaj gönderir',
+  },
   activity: {
     title: 'Hareket / aktivite',
     description: 'Düşme algılama arka plan servisi için',
@@ -217,6 +252,7 @@ export async function getPermissionStatuses(): Promise<PermissionItem[]> {
     backgroundLocation,
     microphone,
     callPhone,
+    sendSms,
     activity,
     photos,
   ] = await Promise.all([
@@ -225,6 +261,7 @@ export async function getPermissionStatuses(): Promise<PermissionItem[]> {
     checkBackgroundLocation(),
     checkMicrophone(),
     checkCallPhone(),
+    checkSendSms(),
     checkActivity(),
     checkPhotos(),
   ]);
@@ -241,11 +278,13 @@ export async function getPermissionStatuses(): Promise<PermissionItem[]> {
               ? microphone
               : key === 'callPhone'
                 ? callPhone
-                : key === 'activity'
-                  ? activity
-                  : key === 'photos'
-                    ? photos
-                    : false;
+                : key === 'sendSms'
+                  ? sendSms
+                  : key === 'activity'
+                    ? activity
+                    : key === 'photos'
+                      ? photos
+                      : false;
 
     return {
       key,
@@ -263,6 +302,7 @@ export async function requestAllPermissions(): Promise<PermissionItem[]> {
   await requestBackgroundLocation();
   await requestMicrophone();
   await requestCallPhone();
+  await requestSendSms();
   await requestActivity();
   await requestPhotos();
   await requestBatteryOptimization();

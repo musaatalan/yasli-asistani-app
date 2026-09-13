@@ -2,13 +2,13 @@ import * as Haptics from 'expo-haptics';
 import * as IntentLauncher from 'expo-intent-launcher';
 import * as Linking from 'expo-linking';
 import * as Location from 'expo-location';
-import * as SMS from 'expo-sms';
 import * as Speech from 'expo-speech';
 import {
   AppState,
   PermissionsAndroid,
   Platform,
 } from 'react-native';
+import { sendSmsSilent, isSilentSmsAvailable } from 'auto-sms';
 
 import { getEmergencyLocationText } from '@/services/LocationService';
 import type { EmergencyContact, SosResult } from '@/types';
@@ -59,7 +59,6 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
   ]);
 }
 
-/** Uygulamayı öne getir — arka plandan Intent engelini aşmak için. */
 async function bringAppToForeground(): Promise<void> {
   try {
     await Linking.openURL('yasliasistani://');
@@ -85,6 +84,34 @@ async function bringAppToForeground(): Promise<void> {
   });
 }
 
+export async function requestSendSmsPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+  try {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.SEND_SMS,
+      {
+        title: 'SMS gönderme izni',
+        message:
+          'Acil durumda yakınıza otomatik SMS göndermek için izin gerekir. Düşen kişi Gönder’e basamaz.',
+        buttonPositive: 'İzin ver',
+        buttonNegative: 'Hayır',
+      }
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
+    return false;
+  }
+}
+
+async function hasSendSmsPermission(): Promise<boolean> {
+  if (Platform.OS !== 'android') return false;
+  try {
+    return await PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.SEND_SMS);
+  } catch {
+    return false;
+  }
+}
+
 async function requestCallPermission(): Promise<boolean> {
   if (Platform.OS !== 'android') return true;
   try {
@@ -103,13 +130,10 @@ async function requestCallPermission(): Promise<boolean> {
   }
 }
 
-function speakSmsSendHint(): void {
+function speak(text: string): void {
   try {
     Speech.stop();
-    Speech.speak(
-      "SMS ekranı açıldı. Lütfen gönder düğmesine basın.",
-      { language: 'tr-TR', rate: 0.9, pitch: 1.0 }
-    );
+    Speech.speak(text, { language: 'tr-TR', rate: 0.92, pitch: 1.0 });
   } catch {
     // ignore
   }
@@ -146,65 +170,61 @@ export async function dialNumber(phone: string): Promise<boolean> {
   }
 }
 
+/** Sessiz SMS — kullanıcıya dokunma yok (Android SmsManager). */
+async function sendSilentSmsToPhones(
+  phones: string[],
+  message: string
+): Promise<{ sent: number; failed: number }> {
+  let sent = 0;
+  let failed = 0;
+
+  if (!isSilentSmsAvailable()) {
+    return { sent: 0, failed: phones.length };
+  }
+
+  const allowed = await requestSendSmsPermission();
+  if (!allowed) {
+    return { sent: 0, failed: phones.length };
+  }
+
+  for (const phone of phones) {
+    try {
+      await sendSmsSilent(phone, message);
+      sent += 1;
+      await sleep(350);
+    } catch (error) {
+      console.warn('[SosService] silent SMS failed', phone, error);
+      failed += 1;
+    }
+  }
+
+  return { sent, failed };
+}
+
+/** Composer fallback — yalnızca sessiz SMS başarısızsa. */
 async function openSmsComposer(phones: string[], message: string): Promise<boolean> {
   if (phones.length === 0) return false;
-
   const recipients = phones.join(';');
 
-  if (Platform.OS === 'android') {
-    try {
-      await IntentLauncher.startActivityAsync('android.intent.action.SENDTO', {
-        data: `smsto:${recipients}`,
-        extra: {
-          sms_body: message,
-          'android.intent.extra.TEXT': message,
-        },
-      });
-      speakSmsSendHint();
-      return true;
-    } catch (error) {
-      console.warn('[SosService] SENDTO multi failed', error);
-    }
-
-    // Tek alıcıya düş
-    try {
-      await IntentLauncher.startActivityAsync('android.intent.action.SENDTO', {
-        data: `smsto:${phones[0]}`,
-        extra: { sms_body: message },
-      });
-      speakSmsSendHint();
-      return true;
-    } catch (error) {
-      console.warn('[SosService] SENDTO single failed', error);
-    }
-  }
-
   try {
-    if (await SMS.isAvailableAsync()) {
-      const result = await SMS.sendSMSAsync(phones, message);
-      if (result.result !== 'cancelled') {
-        speakSmsSendHint();
-        return true;
-      }
-      return false;
-    }
-  } catch (error) {
-    console.warn('[SosService] expo-sms failed', error);
-  }
-
-  try {
-    const body = encodeURIComponent(message);
-    const sep = Platform.OS === 'ios' ? '&' : '?';
-    const to = phones.join(',');
-    await Linking.openURL(`sms:${to}${sep}body=${body}`);
-    speakSmsSendHint();
+    await IntentLauncher.startActivityAsync('android.intent.action.SENDTO', {
+      data: `smsto:${recipients}`,
+      extra: { sms_body: message },
+    });
+    speak('SMS ekranı açıldı. Lütfen gönder düğmesine basın.');
     return true;
   } catch {
-    return false;
+    try {
+      const body = encodeURIComponent(message);
+      await Linking.openURL(`sms:${phones[0]}?body=${body}`);
+      speak('SMS ekranı açıldı. Lütfen gönder düğmesine basın.');
+      return true;
+    } catch {
+      return false;
+    }
   }
 }
 
-/** Arama/SMS açmadan SOS hazırlık kontrolü. */
 export async function checkSosReadiness(
   contacts: EmergencyContact[]
 ): Promise<SosReadiness> {
@@ -221,6 +241,15 @@ export async function checkSosReadiness(
   });
 
   if (Platform.OS === 'android') {
+    const smsOk = await hasSendSmsPermission();
+    checks.push({
+      label: 'Otomatik SMS izni',
+      ok: smsOk,
+      detail: smsOk
+        ? 'Sessiz SMS gönderilebilir'
+        : 'Eksik — Kurulumdan SMS iznini verin',
+    });
+
     let callOk = false;
     try {
       callOk = await PermissionsAndroid.check(
@@ -230,7 +259,7 @@ export async function checkSosReadiness(
       callOk = false;
     }
     checks.push({
-      label: 'Arama izni',
+      label: 'Otomatik arama izni',
       ok: callOk,
       detail: callOk ? 'Verildi' : 'Eksik — Kurulumdan verin',
     });
@@ -246,16 +275,6 @@ export async function checkSosReadiness(
         : 'Eksik — SOS konum ekleyemez',
   });
 
-  const smsAvailable = await SMS.isAvailableAsync().catch(() => true);
-  checks.push({
-    label: 'SMS hazır',
-    ok: phones.length > 0 && smsAvailable !== false,
-    detail:
-      phones.length > 1
-        ? 'Çoklu alıcı desteklenir (Gönder’e basılmalı)'
-        : 'Android otomatik SMS atmaz; Gönder gerekir',
-  });
-
   return {
     ok: checks.every((c) => c.ok),
     checks,
@@ -263,11 +282,10 @@ export async function checkSosReadiness(
 }
 
 /**
- * SOS akışı (hızlı ve güvenilir):
- * 1) Uygulamayı öne getir
- * 2) HEMEN ara (konum bekleme)
- * 3) Konumu kısa timeout ile al
- * 4) SMS şablonunu aç (tüm acil numaralar) + sesli "Gönder"e bas
+ * Acil SOS:
+ * 1) Konumu kısa timeout ile al
+ * 2) Otomatik SMS (dokunmadan) — tüm acil numaralar
+ * 3) Otomatik arama — birincil kişi
  */
 export async function triggerSos(
   contacts: EmergencyContact[],
@@ -284,6 +302,8 @@ export async function triggerSos(
   if (phones.length === 0 && !primary) {
     return {
       smsOpened: false,
+      smsSentCount: 0,
+      smsFailedCount: 0,
       calledPhone: null,
       locationAttached: false,
       message: '',
@@ -293,21 +313,9 @@ export async function triggerSos(
   }
 
   await bringAppToForeground();
-  await sleep(400);
+  await sleep(300);
 
-  let calledPhone: string | null = null;
-  let smsOpened = false;
-  let error: string | undefined;
-
-  if (primary) {
-    try {
-      const ok = await dialNumber(primary);
-      calledPhone = ok ? primary : null;
-      if (!ok) error = 'Arama başlatılamadı.';
-    } catch {
-      error = 'Arama başlatılamadı.';
-    }
-  }
+  speak('Acil durum. Yakınlarınıza mesaj gönderiliyor.');
 
   const location = await withTimeout(
     getEmergencyLocationText(),
@@ -327,23 +335,62 @@ export async function triggerSos(
     `Zaman: ${new Date().toLocaleString('tr-TR')}`,
   ].join('\n');
 
-  await sleep(1200);
-  try {
-    await bringAppToForeground();
-    await sleep(300);
+  let error: string | undefined;
+  let smsOpened = false;
+  let smsSentCount = 0;
+  let smsFailedCount = 0;
+
+  // 1) OTOMATİK SMS — kullanıcı dokunmaz
+  const silent = await sendSilentSmsToPhones(
+    phones.length ? phones : primary ? [primary] : [],
+    message
+  );
+  smsSentCount = silent.sent;
+  smsFailedCount = silent.failed;
+
+  if (smsSentCount > 0) {
+    speak(
+      smsSentCount === 1
+        ? 'Acil mesaj gönderildi. Şimdi arama yapılıyor.'
+        : `${smsSentCount} kişiye acil mesaj gönderildi. Şimdi arama yapılıyor.`
+    );
+  } else {
+    // Son çare: composer (manuel Gönder)
     smsOpened = await openSmsComposer(
       phones.length ? phones : primary ? [primary] : [],
       message
     );
     if (!smsOpened) {
-      error = [error, 'SMS ekranı açılamadı.'].filter(Boolean).join(' ');
+      error = 'Otomatik SMS gönderilemedi. SMS iznini kontrol edin.';
+    } else {
+      error =
+        'Otomatik SMS izni yok veya başarısız — SMS ekranı açıldı, Gönder gerekir.';
     }
-  } catch {
-    error = [error, 'SMS ekranı açılamadı.'].filter(Boolean).join(' ');
+  }
+
+  // 2) OTOMATİK ARAMA — SMS’ten sonra
+  await sleep(smsSentCount > 0 ? 800 : 1500);
+  let calledPhone: string | null = null;
+  if (primary) {
+    try {
+      await bringAppToForeground();
+      await sleep(200);
+      const ok = await dialNumber(primary);
+      calledPhone = ok ? primary : null;
+      if (!ok) {
+        error = [error, 'Arama başlatılamadı.'].filter(Boolean).join(' ');
+      } else if (smsSentCount > 0) {
+        speak('Acil kişi aranıyor.');
+      }
+    } catch {
+      error = [error, 'Arama başlatılamadı.'].filter(Boolean).join(' ');
+    }
   }
 
   return {
     smsOpened,
+    smsSentCount,
+    smsFailedCount,
     calledPhone,
     locationAttached: location.attached,
     message,
@@ -351,7 +398,6 @@ export async function triggerSos(
   };
 }
 
-/** İlaç kaçırma: sadece SMS (arama yok). */
 export async function openMissedMedicineSms(
   contacts: EmergencyContact[],
   medicineName: string,
@@ -367,6 +413,11 @@ export async function openMissedMedicineSms(
     `Zaman: ${new Date().toLocaleString('tr-TR')}`,
   ].join('\n');
 
+  const silent = await sendSilentSmsToPhones(phones, message);
+  if (silent.sent > 0) {
+    speak('İlaç uyarısı yakınıza gönderildi.');
+    return true;
+  }
   return openSmsComposer(phones, message);
 }
 
@@ -380,4 +431,5 @@ export const SosService = {
   bringAppToForeground,
   checkSosReadiness,
   openMissedMedicineSms,
+  requestSendSmsPermission,
 };

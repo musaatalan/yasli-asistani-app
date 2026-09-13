@@ -198,7 +198,7 @@ export default function SettingsScreen() {
 
         <Text style={styles.section}>2. Acil Kişi (SMS)</Text>
         <Text style={styles.hint}>
-          SOS SMS her iki numaraya da açılır. Arama yalnızca 1. kişiye yapılır.
+          SOS önce otomatik SMS (dokunmadan), sonra 1. kişiyi otomatik arar.
         </Text>
         <TextInput
           style={styles.input}

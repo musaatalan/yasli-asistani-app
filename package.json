@@ -1,6 +1,6 @@
 {
   "name": "yasliasistaniapp",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "main": "expo-router/entry",
   "scripts": {
     "start": "expo start",
@@ -11,6 +11,7 @@
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
     "@react-native-async-storage/async-storage": "2.2.0",
+    "auto-sms": "file:./modules/auto-sms",
     "babel-preset-expo": "~57.0.0",
     "expo": "~57.0.22",
     "expo-asset": "~57.0.17",

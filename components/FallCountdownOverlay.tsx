@@ -34,20 +34,25 @@ async function performCancelCleanup() {
 
 function describeSosResult(result: {
   smsOpened: boolean;
+  smsSentCount?: number;
+  smsFailedCount?: number;
   calledPhone: string | null;
   locationAttached: boolean;
   error?: string;
 }): string {
-  if (result.error && !result.smsOpened && !result.calledPhone) {
+  const sent = result.smsSentCount ?? 0;
+  if (result.error && sent === 0 && !result.smsOpened && !result.calledPhone) {
     return result.error;
   }
   return [
     result.locationAttached ? 'Konum mesaja eklendi.' : 'Konum alınamadı.',
-    result.smsOpened
-      ? "SMS ekranı açıldı — 'Gönder'e basın (Android otomatik SMS atmaz)."
-      : 'SMS açılamadı.',
+    sent > 0
+      ? `Otomatik SMS gönderildi (${sent} kişi).`
+      : result.smsOpened
+        ? "SMS ekranı açıldı — 'Gönder'e basın (izin eksik)."
+        : 'SMS gönderilemedi.',
     result.calledPhone
-      ? `Arama başlatıldı: ${result.calledPhone}`
+      ? `Otomatik arama: ${result.calledPhone}`
       : 'Arama başlatılamadı.',
     result.error ?? '',
   ]
@@ -148,7 +153,7 @@ export function FallCountdownOverlay() {
 
         await NotificationService.sendImmediateAlert(
           'Düşme — SOS',
-          'Arama başlatılıyor, ardından SMS…'
+          'Otomatik SMS gönderiliyor, ardından arama…'
         );
 
         const result = await SosService.triggerSos(

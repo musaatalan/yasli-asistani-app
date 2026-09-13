@@ -46,18 +46,23 @@ export default function HomeScreen() {
       const contacts = useAppStore.getState().emergencyContacts;
       const message = useAppStore.getState().settings.emergencyMessage;
       const result = await SosService.triggerSos(contacts, message, 'ACİL DURUM');
-      const failed = Boolean(result.error && !result.smsOpened && !result.calledPhone);
+      const sent = result.smsSentCount ?? 0;
+      const failed = Boolean(
+        result.error && sent === 0 && !result.smsOpened && !result.calledPhone
+      );
       const body = failed
         ? result.error!
         : [
             result.locationAttached
               ? 'Konum mesaja eklendi.'
               : 'Konum alınamadı.',
-            result.smsOpened
-              ? "SMS ekranı açıldı — Gönder'e basın."
-              : 'SMS açılamadı — acil kişi numarasını ayarlardan girin.',
+            sent > 0
+              ? `Otomatik SMS gönderildi (${sent} kişi).`
+              : result.smsOpened
+                ? "SMS ekranı açıldı — izin eksikse Gönder'e basın."
+                : 'SMS gönderilemedi — SMS iznini kurulumdan verin.',
             result.calledPhone
-              ? `Arama başlatıldı: ${result.calledPhone}`
+              ? `Otomatik arama: ${result.calledPhone}`
               : 'Arama başlatılamadı.',
             result.error ?? '',
           ]
