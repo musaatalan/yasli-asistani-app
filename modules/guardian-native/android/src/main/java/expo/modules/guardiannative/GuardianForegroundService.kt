@@ -73,6 +73,9 @@ class GuardianForegroundService : Service(), SensorEventListener {
   }
 
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    // Android: startForegroundService sonrası 5 sn içinde startForeground şart
+    startAsForeground()
+
     when (intent?.action) {
       ACTION_STOP -> {
         teardown()
@@ -87,11 +90,11 @@ class GuardianForegroundService : Service(), SensorEventListener {
     }
 
     if (!GuardianPrefs.isEnabled(this)) {
+      stopForeground(STOP_FOREGROUND_REMOVE)
       stopSelf()
       return START_NOT_STICKY
     }
 
-    startAsForeground()
     acquireWakeLock()
     bindSensorsAndVoice()
     isRunning = true
