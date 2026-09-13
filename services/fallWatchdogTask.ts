@@ -1,6 +1,5 @@
 /**
- * expo-task-manager iskeleti — arka plan düşme izleme watchdog.
- * Asıl sürekli sensör okuma BackgroundFallService (Android FGS) üzerindedir.
+ * Arka plan koruma watchdog — FGS düştüyse yeniden başlat.
  */
 import * as TaskManager from 'expo-task-manager';
 
@@ -11,10 +10,7 @@ export const FALL_WATCHDOG_TASK = 'YASLI_FALL_WATCHDOG';
 
 TaskManager.defineTask(FALL_WATCHDOG_TASK, async () => {
   try {
-    const enabled = useAppStore.getState().settings.sensors.fallDetectionEnabled;
-    if (!enabled) {
-      return;
-    }
+    if (!useAppStore.getState().onboardingCompleted) return;
     if (!BackgroundFallService.isRunning()) {
       await BackgroundFallService.start();
     }

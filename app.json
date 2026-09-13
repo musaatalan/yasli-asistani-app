@@ -2,7 +2,7 @@
   "expo": {
     "name": "Güvenli Yaşlı Asistanı",
     "slug": "YasliAsistani",
-    "version": "1.0.7",
+    "version": "1.0.8",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "scheme": "yasliasistani",
@@ -47,6 +47,7 @@
         "FOREGROUND_SERVICE_LOCATION",
         "FOREGROUND_SERVICE_HEALTH",
         "FOREGROUND_SERVICE_SPECIAL_USE",
+        "FOREGROUND_SERVICE_MICROPHONE",
         "ACTIVITY_RECOGNITION",
         "HIGH_SAMPLING_RATE_SENSORS",
         "WAKE_LOCK",

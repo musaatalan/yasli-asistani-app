@@ -34,20 +34,61 @@ export default function RootLayout() {
     return () => cleanup?.();
   }, [onboardingCompleted]);
 
-  // Düşme algılama — Android foreground service + stillness filtreli sensör
+  /**
+   * Koruma servisi — onboarding sonrası HER ZAMAN çalışır (uygulama kapalıyken de).
+   * Düşme kapalı olsa bile İMDAT dinleme FGS içinde devam eder.
+   * Arka planda VoiceTrigger STOP ETME — önceki hata buydu.
+   */
   useEffect(() => {
-    if (!onboardingCompleted || !sensors.fallDetectionEnabled) {
+    if (!onboardingCompleted) {
       void BackgroundFallService.stop();
+      void VoiceTriggerService.stop();
       return;
     }
 
     void BackgroundFallService.start({
       sensitivity: sensors.fallSensitivity,
       countdownSeconds: sensors.fallCountdownSeconds,
+      fallDetectionEnabled: sensors.fallDetectionEnabled,
     });
 
+    const onAppState = (state: AppStateStatus) => {
+      if (state !== 'active') return;
+
+      // Servis ölmüşse (OEM öldürmüş olabilir) yeniden başlat
+      if (!BackgroundFallService.isRunning()) {
+        void BackgroundFallService.start({
+          sensitivity: useAppStore.getState().settings.sensors.fallSensitivity,
+          countdownSeconds:
+            useAppStore.getState().settings.sensors.fallCountdownSeconds,
+          fallDetectionEnabled:
+            useAppStore.getState().settings.sensors.fallDetectionEnabled,
+        });
+        return;
+      }
+
+      // Overlay yokken ses düştüyse toparla
+      if (
+        !useFallAlertStore.getState().active &&
+        VoiceTriggerService.getMode() === 'off'
+      ) {
+        void VoiceTriggerService.startEmergencyMode(() => {
+          const seconds =
+            useAppStore.getState().settings.sensors.fallCountdownSeconds ?? 10;
+          FallDetectionService.openFallCountdown(
+            seconds,
+            'Sesli imdat komutu algılandı'
+          );
+        });
+      }
+    };
+
+    const sub = AppState.addEventListener('change', onAppState);
+
     return () => {
-      void BackgroundFallService.stop();
+      sub.remove();
+      // Root unmount / ayar değişiminde yeniden start edilecek — burada stop etme
+      // (stop, onboarding kapanınca veya explicit disable'da yapılır)
     };
   }, [
     onboardingCompleted,
@@ -55,52 +96,6 @@ export default function RootLayout() {
     sensors.fallSensitivity,
     sensors.fallCountdownSeconds,
   ]);
-
-  // Normal mod: sesli İMDAT / YARDIM / SOS dinleme
-  useEffect(() => {
-    if (!onboardingCompleted) {
-      void VoiceTriggerService.stop();
-      return;
-    }
-
-    let disposed = false;
-
-    const startEmergency = () => {
-      if (disposed) return;
-      if (useFallAlertStore.getState().active) return;
-      void VoiceTriggerService.startEmergencyMode(() => {
-        FallDetectionService.openFallCountdown(
-          useAppStore.getState().settings.sensors.fallCountdownSeconds ?? 10,
-          'Sesli imdat komutu algılandı'
-        );
-      });
-    };
-
-    startEmergency();
-
-    const onAppState = (state: AppStateStatus) => {
-      if (state === 'active') {
-        startEmergency();
-        // Servis düşmüşse yeniden başlat
-        if (
-          useAppStore.getState().settings.sensors.fallDetectionEnabled &&
-          !BackgroundFallService.isRunning()
-        ) {
-          void BackgroundFallService.start();
-        }
-      } else if (state === 'background' || state === 'inactive') {
-        void VoiceTriggerService.stop();
-      }
-    };
-
-    const sub = AppState.addEventListener('change', onAppState);
-
-    return () => {
-      disposed = true;
-      sub.remove();
-      void VoiceTriggerService.stop();
-    };
-  }, [onboardingCompleted]);
 
   return (
     <GestureHandlerRootView style={{ flex: 1, backgroundColor: Colors.bg }}>

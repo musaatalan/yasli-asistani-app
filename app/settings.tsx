@@ -220,6 +220,12 @@ export default function SettingsScreen() {
           <Text style={styles.sosTestText}>SOS test modu (arama/SMS yok)</Text>
         </Pressable>
 
+        <Text style={styles.hint}>
+          Uygulamayı kapatınca koruma sürmesi için bildirim çubuğunda “Koruma
+          aktif” görünmeli. Telefonda: Ayarlar → Uygulamalar → Güvenli Yaşlı
+          Asistanı → Pil → Kısıtlama yok. Uygulamayı “Zorla durdur” yapmayın.
+        </Text>
+
         <Text style={styles.section}>Sensörler</Text>
         <View style={styles.switchRow}>
           <Text style={styles.switchLabel}>Düşme algılama</Text>
