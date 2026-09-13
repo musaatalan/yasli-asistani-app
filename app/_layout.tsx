@@ -25,6 +25,15 @@ export default function RootLayout() {
     void NotificationService.scheduleMedicineReminders(medicines);
   }, [medicines, onboardingCompleted]);
 
+  useEffect(() => {
+    if (!onboardingCompleted) return;
+    let cleanup: (() => void) | undefined;
+    void NotificationService.attachListeners().then((fn) => {
+      cleanup = fn;
+    });
+    return () => cleanup?.();
+  }, [onboardingCompleted]);
+
   // Düşme algılama — Android foreground service + stillness filtreli sensör
   useEffect(() => {
     if (!onboardingCompleted || !sensors.fallDetectionEnabled) {

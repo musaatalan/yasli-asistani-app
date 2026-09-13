@@ -11,6 +11,8 @@ function withBackgroundFallService(config) {
     'android.permission.FOREGROUND_SERVICE',
     'android.permission.FOREGROUND_SERVICE_HEALTH',
     'android.permission.FOREGROUND_SERVICE_SPECIAL_USE',
+    'android.permission.ACTIVITY_RECOGNITION',
+    'android.permission.HIGH_SAMPLING_RATE_SENSORS',
     'android.permission.WAKE_LOCK',
     'android.permission.POST_NOTIFICATIONS',
     'android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS',
@@ -33,14 +35,14 @@ function withBackgroundFallService(config) {
         $: {
           'android:name': serviceName,
           'android:exported': 'false',
-          'android:foregroundServiceType': 'health|specialUse',
+          'android:foregroundServiceType': 'specialUse',
         },
       };
       app.service.push(service);
     } else {
       service.$ = {
         ...service.$,
-        'android:foregroundServiceType': 'health|specialUse',
+        'android:foregroundServiceType': 'specialUse',
         'android:exported': service.$['android:exported'] ?? 'false',
       };
     }

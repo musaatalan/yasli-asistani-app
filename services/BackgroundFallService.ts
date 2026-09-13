@@ -1,5 +1,5 @@
 import { Accelerometer } from 'expo-sensors';
-import { AppState, Linking, Platform } from 'react-native';
+import { AppState, Linking, PermissionsAndroid, Platform } from 'react-native';
 import BackgroundService from 'react-native-background-actions';
 
 import {
@@ -31,14 +31,28 @@ function onFallDetected() {
     'Düşme algılandı (serbest düşüş + darbe + hareketsizlik)'
   );
 
-  // Arka plandaysa uygulamayı öne getir (overlay görünsün)
   void Linking.openURL('yasliasistani://');
 }
 
-/**
- * Android foreground service içinde ivmeölçer dinler.
- * Ekran kilitliyken / uygulama arka plandayken JS sürecini canlı tutar.
- */
+/** Android 14+ health FGS için ACTIVITY_RECOGNITION şart. */
+async function ensureActivityRecognition(): Promise<boolean> {
+  if (Platform.OS !== 'android') return true;
+  try {
+    const granted = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.ACTIVITY_RECOGNITION,
+      {
+        title: 'Hareket izni',
+        message: 'Düşme algılama için fiziksel aktivite izni gerekir.',
+        buttonPositive: 'İzin ver',
+        buttonNegative: 'Hayır',
+      }
+    );
+    return granted === PermissionsAndroid.RESULTS.GRANTED;
+  } catch {
+    return false;
+  }
+}
+
 async function fallMonitorTask(taskData?: MonitorOptions) {
   const sensitivity =
     taskData?.sensitivity ??
@@ -51,7 +65,6 @@ async function fallMonitorTask(taskData?: MonitorOptions) {
   });
 
   try {
-    // Servis çalıştığı sürece bekle
     while (BackgroundService.isRunning()) {
       await sleep(1000);
     }
@@ -70,16 +83,10 @@ const notificationOptions = {
   },
   color: '#E11D2E',
   linkingURI: 'yasliasistani://',
-  foregroundServiceType: ['health', 'specialUse'] as (
-    | 'health'
-    | 'specialUse'
-  )[],
+  // specialUse yeterli; health tipi ekstra sensor izinleri istiyor (SDK 36)
+  foregroundServiceType: ['specialUse'] as 'specialUse'[],
 };
 
-/**
- * Arka plan düşme izleme — Android'de kalıcı bildirimli foreground service.
- * iOS'ta yalnızca uygulama aktif/background kısa süre için sensör dinler.
- */
 export const BackgroundFallService = {
   async start(options?: MonitorOptions): Promise<void> {
     await this.stop();
@@ -91,6 +98,7 @@ export const BackgroundFallService = {
 
     if (Platform.OS === 'android') {
       try {
+        await ensureActivityRecognition();
         await BackgroundService.start(fallMonitorTask, {
           ...notificationOptions,
           parameters: { sensitivity },
@@ -104,7 +112,6 @@ export const BackgroundFallService = {
       }
     }
 
-    // iOS / fallback: klasik ön plan dinleyici + app state ile yeniden bağla
     foregroundUnsubscribe = FallDetectionService.start(onFallDetected, sensitivity);
 
     appStateSub = AppState.addEventListener('change', (state) => {

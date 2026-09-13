@@ -82,7 +82,8 @@ export default function OnboardingScreen() {
       (i.key === 'notifications' ||
         i.key === 'location' ||
         i.key === 'microphone' ||
-        i.key === 'callPhone')
+        i.key === 'callPhone' ||
+        i.key === 'activity')
   );
 
   return (
